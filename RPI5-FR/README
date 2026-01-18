@@ -1,0 +1,48 @@
+Facial Registration module, optimised for RaspberriPi 5.
+
+sudo apt update
+pip3 install Pillow
+
+## check if you already have the gstreamer support or not
+python3 -c "import cv2; print(cv2.getBuildInformation())" | grep GStreamer
+
+## if not then always build the opencv 4 and above for gtreamer and onvif support
+pip uninstall opencv-python opencv-contrib-python
+
+sudo apt install -y cmake libjpeg-dev libpng-dev libtiff-dev \
+                    libavcodec-dev libavformat-dev libswscale-dev \
+                    libv4l-dev libxvidcore-dev libx264-dev \
+                    libgtk-3-dev libcanberra-gtk3-dev \
+                    libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+                    gstreamer1.0-libav gstreamer1.0-plugins-good
+
+# install opencv
+git clone https://github.com/opencv/opencv.git
+cd opencv
+mkdir build
+cd build
+
+cmake -D CMAKE_BUILD_TYPE=RELEASE \
+      -D CMAKE_INSTALL_PREFIX=/usr/local \
+      -D WITH_GSTREAMER=ON \
+      -D WITH_FFMPEG=ON \
+      -D WITH_V4L=ON \
+      -D BUILD_EXAMPLES=OFF ..
+
+make -j$(nproc)
+sudo make install
+
+## install GStreamer with libcamera support
+sudo apt update
+sudo apt install -y gstreamer1.0-tools gstreamer1.0-libav \
+                    gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
+                    gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly \
+                    libgstreamer-plugins-base1.0-dev libgstreamer1.0-dev \
+                    gstreamer1.0-libcamera
+
+make sure libcamera-hello is working
+
+## command to check the gstreamer pipeline:
+gst-launch-1.0 libcamerasrc ! video/x-raw,format=NV12,width=640,height=480 ! videoconvert ! autovideosink
+
+I tested with my Raspberry Pi "Camera module 3" NOIR WIDE, hence format  =  NV12

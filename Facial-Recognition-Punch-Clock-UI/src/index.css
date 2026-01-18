@@ -1,0 +1,47 @@
+/* MUI global styles and custom overrides */
+
+/* Inter font for all elements (Cursor-style) */
+body, * {
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Helvetica Neue", Arial, sans-serif !important;
+}
+
+/* Prevent double scrollbars */
+html, body {
+  overflow: hidden;
+  height: 100vh;
+  margin: 0;
+  padding: 0;
+}
+
+#root {
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Dark mode transitions */
+.dark {
+  color-scheme: dark;
+}
+/* Smooth theme transitions */
+* {
+  transition: background-color 0.3s ease, border-color 0.3s ease;
+}
+/* Override default focus styles for better dark mode compatibility */
+*:focus-visible {
+  outline: 2px solid #6366f1; /* MUI primary color or adjust as needed */
+  outline-offset: 2px;
+}
+/* Dark mode scrollbar */
+.dark ::-webkit-scrollbar {
+  width: 12px;
+}
+.dark ::-webkit-scrollbar-track {
+  background: #1f2937; /* dark gray */
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: #4b5563; /* medium gray */
+  border-radius: 6px;
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #6b7280; /* lighter gray */
+}

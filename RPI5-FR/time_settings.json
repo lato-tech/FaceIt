@@ -1,0 +1,10 @@
+{
+  "timeSource": "auto",
+  "ntpServers": [
+    "time.google.com",
+    "pool.ntp.org",
+    "time.cloudflare.com",
+    "time.windows.com"
+  ],
+  "timeFormat": "24h"
+}

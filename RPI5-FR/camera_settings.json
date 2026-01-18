@@ -1,0 +1,6 @@
+{
+  "faceDetectionThreshold": 0.6,
+  "cameraResolution": "720p",
+  "colorTone": "natural",
+  "enhancedLighting": true
+}

@@ -1,0 +1,17 @@
+{
+  "aiFeatures": {
+    "enhancedRecognition": false,
+    "multiPersonDetection": false,
+    "emotionDetection": false,
+    "ageEstimation": false,
+    "maskDetection": false,
+    "antispoofing": false,
+    "behaviorAnalysis": false,
+    "glassesDetection": false
+  },
+  "aiPerformance": {
+    "modelOptimization": "balanced",
+    "processingUnit": "auto",
+    "confidenceThreshold": 0.85
+  }
+}
