@@ -1,0 +1,27 @@
+.DS_Store
+.env
+.env.*
+
+# Node
+**/node_modules/
+**/dist/
+
+# Python
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/.venv/
+**/.venv-*/
+**/venv/
+
+# Logs
+**/*.log
+RPI5-FR/logs/
+RPI5-FR/server.log
+
+# Databases
+RPI5-FR/db/*.db
+
+# Face data (biometric)
+RPI5-FR/faces/
+RPI5-FR/profiles/
