@@ -15,6 +15,8 @@ export interface AttendanceLog {
   type: 'check-in' | 'check-out' | 'register';
   timestamp: string;
   status: string;
+  confidence?: number | null;
+  mode?: 'auto' | 'manual';
   modified?: {
     by: string;
     reason: string;

@@ -169,8 +169,8 @@ event_source_lock = threading.Lock()
 frame_buffer = []
 frame_buffer_lock = threading.Lock()
 # RAM tuning: keep more frames in memory to smooth stream + recognition handoff.
-# 8 frames at 1280x720 BGR is ~22MB; acceptable with 16GB RAM.
-frame_buffer_max_size = 8
+# 24 frames at 1280x720 BGR ~66MB; use free RAM for smoother handoff and less frame drops.
+frame_buffer_max_size = 24
 recognition_thread = None
 recognition_active = False
 last_recognition_time = 0
@@ -234,8 +234,8 @@ attendance_settings = {
 duplicate_broadcast_last = {}
 
 # RAM tuning: cache profile photos in memory to reduce disk I/O and UI stutter.
-PROFILE_PHOTO_CACHE_MAX = 50
-PROFILE_PHOTO_CACHE_TTL_SEC = 300
+PROFILE_PHOTO_CACHE_MAX = 200
+PROFILE_PHOTO_CACHE_TTL_SEC = 600
 profile_photo_cache = {}
 
 def _get_profile_photo_cache(cache_key: str):
@@ -953,15 +953,20 @@ def recognition_worker():
             # Broadcast results to EventSource clients
             broadcast_recognition_results(faces_payload, recognized_payload)
 
-            # Record attendance with cooldown for recognized faces
+            # Record attendance only when confidence is high enough (reduce false positives)
+            from config import Config as Cfg
+            attendance_min_conf = getattr(Cfg, 'ATTENDANCE_MIN_CONFIDENCE', 0.75)
             for r in results:
                 name = r.get('name')
                 if not name or name == 'Unknown':
                     continue
+                conf = r.get('confidence') or 0.0
+                if conf < attendance_min_conf:
+                    continue  # skip low-confidence matches to avoid mis-identification
                 now_dt = datetime.now()
                 if name not in last_attendance_time or \
                    (now_dt - last_attendance_time[name]).seconds > attendance_cooldown:
-                    attendance_info = record_attendance(name, confidence=r.get('confidence'))
+                    attendance_info = record_attendance(name, confidence=conf)
                     last_attendance_time[name] = now_dt
                     if recognized_payload and recognized_payload.get('data', {}).get('name') == name:
                         recognized_payload['data'].update({

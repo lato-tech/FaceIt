@@ -28,6 +28,8 @@ type CombinedLog = {
   status: string;
   imageUrl?: string;
   attendanceLog?: AttendanceLog;
+  confidence?: number | null;
+  mode?: 'auto' | 'manual';
 };
 
 const AttendanceLogs: React.FC = () => {
@@ -59,6 +61,7 @@ const AttendanceLogs: React.FC = () => {
               : rawStatus.toLowerCase() === 'modified'
                 ? 'modified'
                 : 'valid';
+            const manual = item.manual === 1 || item.manual === true;
             return {
               id: String(item.id),
               employeeId: item.employee_id || item.employeeId || item.name,
@@ -66,6 +69,8 @@ const AttendanceLogs: React.FC = () => {
               type: item.event_type || 'check-in',
               timestamp: item.timestamp,
               status: normalizedStatus,
+              confidence: item.confidence != null ? Number(item.confidence) : undefined,
+              mode: manual ? 'manual' : 'auto',
               modified: item.modified_reason ? {
                 by: item.modified_by || 'Admin',
                 reason: item.modified_reason,
@@ -109,6 +114,8 @@ const AttendanceLogs: React.FC = () => {
       details: `${log.employeeName} (${log.employeeId})`,
       status: log.status,
       attendanceLog: log,
+      confidence: log.confidence,
+      mode: log.mode,
     }));
     const eventCombined: CombinedLog[] = eventLogs.map((log) => ({
       id: `evt-${log.id}`,
@@ -208,6 +215,8 @@ const AttendanceLogs: React.FC = () => {
               <TableCell>Source</TableCell>
               <TableCell>Type</TableCell>
               <TableCell>Details</TableCell>
+              <TableCell>Confidence</TableCell>
+              <TableCell>Mode</TableCell>
               <TableCell>Status</TableCell>
               <TableCell>Image</TableCell>
               <TableCell>Actions</TableCell>
@@ -230,6 +239,16 @@ const AttendanceLogs: React.FC = () => {
                   <Typography variant="body2" color="text.secondary">
                     {log.details}
                   </Typography>
+                </TableCell>
+                <TableCell>
+                  {log.confidence != null ? `${(log.confidence * 100).toFixed(1)}%` : '-'}
+                </TableCell>
+                <TableCell>
+                  {log.source === 'attendance' && log.mode != null ? (
+                    <Chip label={log.mode} size="small" variant="outlined" sx={{ textTransform: 'capitalize' }} />
+                  ) : (
+                    '-'
+                  )}
                 </TableCell>
                 <TableCell>
                   <Chip label={log.status} size="small" color={statusColor(log.status)} sx={{ textTransform: 'capitalize' }} />
@@ -259,7 +278,7 @@ const AttendanceLogs: React.FC = () => {
             ))}
             {pagedLogs.length === 0 && (
               <TableRow>
-                <TableCell colSpan={8} align="center">
+                <TableCell colSpan={10} align="center">
                   {loading ? 'Loading logs...' : 'No records found'}
                 </TableCell>
               </TableRow>

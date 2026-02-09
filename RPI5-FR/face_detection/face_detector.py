@@ -115,21 +115,23 @@ class FaceDetector:
                     # Calculate confidence (distance-based)
                     confidence = 1.0 - min_distance
                     
-                    # Only consider it a match if distance is within tolerance
-                    if min_distance <= self.recognition_tolerance:
-                        name = self.known_face_names[min_distance_index]
-                        print(f"🔍 Face {i+1}: {name} (confidence: {confidence:.3f}, distance: {min_distance:.3f})")
+                    # Require clear winner: best match within tolerance AND clearly better than second-best (reduces false positives).
+                    within_tolerance = min_distance <= self.recognition_tolerance
+                    if len(face_distances) > 1:
+                        sorted_indices = np.argsort(face_distances)
+                        second_min_distance = float(face_distances[sorted_indices[1]])
+                        margin = second_min_distance - min_distance
+                        clear_winner = margin >= 0.06  # require gap to avoid confusing similar-looking faces
                     else:
-                        # Stabilize recognition if we recently matched the same person
-                        now = time.time()
-                        last_name = self.last_recognized.get('name')
-                        last_ts = self.last_recognized.get('ts', 0.0)
-                        if last_name and (now - last_ts) <= 2.0 and min_distance <= (self.recognition_tolerance + 0.08):
-                            name = last_name
-                            print(f"🔁 Face {i+1}: {name} (stabilized, distance: {min_distance:.3f})")
-                        else:
-                            name = "Unknown"
-                            print(f"🔍 Face {i+1}: Unknown (best distance: {min_distance:.3f}, tolerance: {self.recognition_tolerance})")
+                        margin = 0.0
+                        clear_winner = True  # only one known face: no second-best to compare
+                    if within_tolerance and clear_winner:
+                        name = self.known_face_names[min_distance_index]
+                        print(f"🔍 Face {i+1}: {name} (confidence: {confidence:.3f}, distance: {min_distance:.3f}, margin: {margin:.3f})")
+                    else:
+                        name = "Unknown"
+                        reason = "margin" if within_tolerance and not clear_winner else "tolerance"
+                        print(f"🔍 Face {i+1}: Unknown (best distance: {min_distance:.3f}, tolerance: {self.recognition_tolerance}, {reason})")
                 else:
                     name = "Unknown"
                     confidence = 0.0

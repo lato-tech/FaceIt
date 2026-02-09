@@ -50,6 +50,7 @@ const AttendanceLogsOnly: React.FC = () => {
                 : rawStatus.toLowerCase() === 'modified'
                   ? 'modified'
                   : 'valid';
+            const manual = item.manual === 1 || item.manual === true;
             return {
               id: String(item.id),
               employeeId: (item.employee_id || item.employeeId || item.name) as string,
@@ -57,6 +58,8 @@ const AttendanceLogsOnly: React.FC = () => {
               type: (item.event_type || 'check-in') as 'check-in' | 'check-out' | 'register',
               timestamp: (item.timestamp as string) || '',
               status: normalizedStatus,
+              confidence: item.confidence != null ? Number(item.confidence) : undefined,
+              mode: manual ? 'manual' : 'auto',
               modified: item.modified_reason
                 ? {
                     by: (item.modified_by as string) || 'Admin',
@@ -148,6 +151,8 @@ const AttendanceLogsOnly: React.FC = () => {
               <TableCell>Time</TableCell>
               <TableCell>Type</TableCell>
               <TableCell>Employee</TableCell>
+              <TableCell>Confidence</TableCell>
+              <TableCell>Mode</TableCell>
               <TableCell>Status</TableCell>
               <TableCell>Actions</TableCell>
             </TableRow>
@@ -164,6 +169,12 @@ const AttendanceLogsOnly: React.FC = () => {
                   </Typography>
                 </TableCell>
                 <TableCell>
+                  {log.confidence != null ? `${(log.confidence * 100).toFixed(1)}%` : '-'}
+                </TableCell>
+                <TableCell>
+                  <Chip label={log.mode ?? 'auto'} size="small" variant="outlined" sx={{ textTransform: 'capitalize' }} />
+                </TableCell>
+                <TableCell>
                   <Chip label={log.status} size="small" color={statusColor(log.status)} sx={{ textTransform: 'capitalize' }} />
                 </TableCell>
                 <TableCell>
@@ -175,7 +186,7 @@ const AttendanceLogsOnly: React.FC = () => {
             ))}
             {pagedLogs.length === 0 && (
               <TableRow>
-                <TableCell colSpan={6} align="center">
+                <TableCell colSpan={8} align="center">
                   {loading ? 'Loading...' : 'No attendance records found'}
                 </TableCell>
               </TableRow>
