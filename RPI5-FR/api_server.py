@@ -47,6 +47,13 @@ def log_face_registration(message):
     except Exception as e:
         print("⚠️  Face registration log error: %s" % e)
 
+def _normalize_confidence(raw_confidence):
+    """Map raw model confidence (0–1, typically max ~0.6) to 0–1 scale so display is 0–100%."""
+    if raw_confidence is None:
+        return 0.0
+    scale = getattr(Config, 'CONFIDENCE_100_PCT_RAW', 0.6)
+    return min(1.0, float(raw_confidence) / scale) if scale > 0 else 0.0
+
 # Stream tuning (lower size/quality for snappier MJPEG)
 STREAM_WIDTH = 640
 STREAM_HEIGHT = 360
@@ -174,9 +181,9 @@ frame_buffer_max_size = 24
 recognition_thread = None
 recognition_active = False
 last_recognition_time = 0
-recognition_interval = 0.6  # Process recognition every 600ms
+recognition_interval = 0.45  # Process recognition more often for smoother detection (~2.2 Hz)
 last_face_detection_time = 0
-face_detection_cooldown = 3.0  # Skip recognition for 3s if no faces
+face_detection_cooldown = 2.0  # Retry recognition sooner when faces appear
 last_empty_broadcast_time = 0.0
 empty_broadcast_interval = 0.5
 last_attribute_time = 0
@@ -756,6 +763,7 @@ def generate_optimized_video_stream(width=STREAM_WIDTH, height=STREAM_HEIGHT, qu
                     frame_bytes = buffer.tobytes()
                     yield (b'--frame\r\n'
                            b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+                    time.sleep(0.02)  # ~50 fps cap for smoother, consistent stream
             else:
                 # Send a blank frame if camera is not available
                 blank_frame = np.zeros((height, width, 3), dtype=np.uint8)
@@ -799,7 +807,7 @@ def recognition_worker():
             
             # Smart frame skipping: only process if enough time has passed
             if now_ts - last_recognition_time < recognition_interval:
-                time.sleep(0.1)  # Short sleep to prevent CPU spinning
+                time.sleep(0.06)  # Short sleep to prevent CPU spinning
                 continue
             
             # Get latest frame from buffer (fallback to camera if buffer is empty)
@@ -828,7 +836,7 @@ def recognition_worker():
                 results = face_detector.detect_and_recognize_faces(frame)
             except Exception as e:
                 print(f"❌ Face detection and recognition error: {e}")
-                time.sleep(0.2)
+                time.sleep(0.12)
                 continue
 
             last_detection_count = len(results) if results is not None else 0
@@ -850,7 +858,7 @@ def recognition_worker():
                 if now_ts - last_empty_broadcast_time >= empty_broadcast_interval:
                     broadcast_recognition_results([])
                     last_empty_broadcast_time = now_ts
-                time.sleep(0.2)  # Longer sleep when no faces
+                time.sleep(0.12)  # Shorter sleep when no faces for snappier retry
                 continue
             
             # Update recognition results
@@ -861,10 +869,10 @@ def recognition_worker():
             if not ai_settings.get('aiFeatures', {}).get('multiPersonDetection', True):
                 results = results[:1]
 
-            # Build UI-friendly faces payload (normalized to 640x480)
+            # Build UI-friendly faces payload in stream coordinates so overlay matches video
             frame_h, frame_w = frame.shape[:2]
-            scale_x = 640.0 / float(frame_w) if frame_w else 1.0
-            scale_y = 480.0 / float(frame_h) if frame_h else 1.0
+            scale_x = float(STREAM_WIDTH) / float(frame_w) if frame_w else 1.0
+            scale_y = float(STREAM_HEIGHT) / float(frame_h) if frame_h else 1.0
             faces_payload = []
             for r in results:
                 loc = r.get('location', {})
@@ -882,12 +890,13 @@ def recognition_worker():
                 age = r.get('age')
                 emotion = r.get('emotion')
                 spoof = r.get('spoof')
+                raw_conf = r.get('confidence', 0.0)
                 faces_payload.append({
                     'x': int(left * scale_x),
                     'y': int(top * scale_y),
                     'width': int((right - left) * scale_x),
                     'height': int((bottom - top) * scale_y),
-                    'confidence': r.get('confidence', 0.0),
+                    'confidence': _normalize_confidence(raw_conf),
                     'recognized': r.get('name') != 'Unknown',
                     'name': r.get('name'),
                     'age': age,
@@ -899,12 +908,13 @@ def recognition_worker():
             recognized_payload = None
             for r in results:
                 if r.get('name') and r.get('name') != 'Unknown':
+                    raw_conf = r.get('confidence')
                     recognized_payload = {
                         'type': 'person_recognized',
                         'timestamp': r.get('timestamp'),
                         'data': {
                             'name': r.get('name'),
-                            'confidence': r.get('confidence')
+                            'confidence': _normalize_confidence(raw_conf)
                         }
                     }
                     break
@@ -953,20 +963,21 @@ def recognition_worker():
             # Broadcast results to EventSource clients
             broadcast_recognition_results(faces_payload, recognized_payload)
 
-            # Record attendance only when confidence is high enough (reduce false positives)
+            # Record attendance only when confidence is high enough (0–100% scale)
             from config import Config as Cfg
             attendance_min_conf = getattr(Cfg, 'ATTENDANCE_MIN_CONFIDENCE', 0.75)
             for r in results:
                 name = r.get('name')
                 if not name or name == 'Unknown':
                     continue
-                conf = r.get('confidence') or 0.0
-                if conf < attendance_min_conf:
-                    continue  # skip low-confidence matches to avoid mis-identification
+                raw_conf = r.get('confidence') or 0.0
+                norm_conf = _normalize_confidence(raw_conf)
+                if norm_conf < attendance_min_conf:
+                    continue  # skip low-confidence matches (threshold on 0–100% scale)
                 now_dt = datetime.now()
                 if name not in last_attendance_time or \
                    (now_dt - last_attendance_time[name]).seconds > attendance_cooldown:
-                    attendance_info = record_attendance(name, confidence=conf)
+                    attendance_info = record_attendance(name, confidence=raw_conf)
                     last_attendance_time[name] = now_dt
                     if recognized_payload and recognized_payload.get('data', {}).get('name') == name:
                         recognized_payload['data'].update({
@@ -1013,11 +1024,11 @@ def recognition_worker():
                 else:
                     print(f"👤 Detected {faces_detected} unknown face(s)")
             
-            # Adaptive sleep based on results
+            # Adaptive sleep based on results (tighter for smoother detection)
             if results:
-                time.sleep(0.1)  # Shorter sleep when faces detected
+                time.sleep(0.06)  # Shorter sleep when faces detected
             else:
-                time.sleep(0.3)  # Longer sleep when no recognition
+                time.sleep(0.15)  # Shorter sleep when no recognition for quicker retry
                 
         except Exception as e:
             logging.exception("Error in recognition worker")
@@ -1090,6 +1101,8 @@ def broadcast_recognition_results(faces_payload, recognized_payload=None):
                             'type': 'face_detected',
                             'timestamp': now_ts,
                             'faces': faces_payload,
+                            'streamWidth': STREAM_WIDTH,
+                            'streamHeight': STREAM_HEIGHT,
                             'data': {'faces_detected': len(faces_payload)}
                         }
                         client.put(f"data: {json.dumps(_json_safe(face_event))}\n\n")
@@ -2067,7 +2080,8 @@ def get_attendance_log():
     """Get recent attendance log"""
     try:
         from db import db
-        logs = db.get_attendance_logs(limit=200)
+        limit = min(int(request.args.get('limit', 200)), 1000)
+        logs = db.get_attendance_logs(limit=limit)
         return jsonify({
             'attendance': logs,
             'count': len(logs)
@@ -2081,7 +2095,7 @@ def get_event_logs():
     """Get recent event logs (anti-spoofing, multi-face, detection stats)"""
     try:
         from db import db
-        limit = int(request.args.get('limit', 200))
+        limit = min(int(request.args.get('limit', 200)), 1000)
         event_type = request.args.get('event_type')
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')

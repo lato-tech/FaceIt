@@ -117,7 +117,9 @@ class Database:
                 CREATE INDEX IF NOT EXISTS idx_employees_active 
                 ON employees(active)
             ''')
-            
+            # WAL mode: smoother reads during writes, better for concurrent access
+            cursor.execute('PRAGMA journal_mode=WAL')
+            cursor.execute('PRAGMA synchronous=NORMAL')
             logger.info("Database initialized successfully")
 
         # Ensure new columns exist for older DBs

@@ -1,5 +1,5 @@
-// API base URL for Raspberry Pi 5 facial recognition
-const API_BASE = 'http://100.103.248.9:5002/api';
+// API base URL - use env or current host so it works from any device
+const API_BASE = import.meta.env?.VITE_API_BASE || `${window.location.protocol}//${window.location.hostname}:5002/api`;
 
 // Health check for facial recognition API
 export const checkRecognitionHealth = async () => {

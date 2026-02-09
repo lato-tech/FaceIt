@@ -204,7 +204,7 @@ const useRecognitionStream = (isActive: boolean) => {
       eventSourceRef.current.onmessage = (event) => {
         try {
           const data: RecognitionEvent = JSON.parse(event.data);
-          setEvents(prev => [...prev.slice(-50), data]); // Keep last 50 events
+          setEvents(prev => [...prev.slice(-35), data]); // Keep last 35 events for smoother UI
         } catch (err) {
           console.error('Error parsing recognition event:', err);
         }
@@ -504,6 +504,7 @@ const CameraFeed: React.FC = () => {
   const [isTraining, setIsTraining] = useState(false);
   const [lastFacesAt, setLastFacesAt] = useState<number | null>(null);
   const [lastEventAt, setLastEventAt] = useState<number | null>(null);
+  const [streamRefSize, setStreamRefSize] = useState({ width: 640, height: 360 });
 
   // Refs
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -703,6 +704,9 @@ const CameraFeed: React.FC = () => {
 
       switch (lastEvent.type) {
         case 'face_detected':
+          if (typeof lastEvent.streamWidth === 'number' && typeof lastEvent.streamHeight === 'number') {
+            setStreamRefSize({ width: lastEvent.streamWidth, height: lastEvent.streamHeight });
+          }
           if (lastEvent.faces && Array.isArray(lastEvent.faces) && lastEvent.faces.length > 0) {
             setCurrentFaces(lastEvent.faces);
             setLastFacesAt(Date.now());
@@ -811,12 +815,14 @@ const CameraFeed: React.FC = () => {
       return;
     }
 
-    // Draw face detection boxes
+    // Box coordinates are in stream reference space (streamRefSize); scale to canvas
+    const refW = streamRefSize.width || 640;
+    const refH = streamRefSize.height || 360;
     currentFaces.forEach(face => {
-      const x = (face.x / 640) * canvas.width;
-      const y = (face.y / 480) * canvas.height;
-      const width = (face.width / 640) * canvas.width;
-      const height = (face.height / 480) * canvas.height;
+      const x = (face.x / refW) * canvas.width;
+      const y = (face.y / refH) * canvas.height;
+      const width = (face.width / refW) * canvas.width;
+      const height = (face.height / refH) * canvas.height;
 
       // Draw bounding box
       ctx.strokeStyle = face.recognized ? '#4CAF50' : '#FF9800';
@@ -854,12 +860,12 @@ const CameraFeed: React.FC = () => {
         ctx.fillText('SPOOF?', x + 5, y - 6);
       }
     });
-  }, [currentFaces]);
+  }, [currentFaces, streamRefSize]);
 
   // Continuous drawing for video stream
   useEffect(() => {
     if (cameraStatus === 'active' && showOverlays) {
-      const interval = setInterval(drawFaceOverlay, 250);
+      const interval = setInterval(drawFaceOverlay, 60);
       return () => clearInterval(interval);
     }
   }, [cameraStatus, currentFaces, drawFaceOverlay, showOverlays]);

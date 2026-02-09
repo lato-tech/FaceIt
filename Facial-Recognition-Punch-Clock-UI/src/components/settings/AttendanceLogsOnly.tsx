@@ -169,7 +169,7 @@ const AttendanceLogsOnly: React.FC = () => {
                   </Typography>
                 </TableCell>
                 <TableCell>
-                  {log.confidence != null ? `${(log.confidence * 100).toFixed(1)}%` : '-'}
+                  {log.confidence != null ? `${Math.min(100, (log.confidence * 100) / 0.6).toFixed(1)}%` : '-'}
                 </TableCell>
                 <TableCell>
                   <Chip label={log.mode ?? 'auto'} size="small" variant="outlined" sx={{ textTransform: 'capitalize' }} />

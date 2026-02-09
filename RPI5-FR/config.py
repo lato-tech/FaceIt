@@ -24,6 +24,8 @@ class Config:
     FACE_RECOGNITION_TOLERANCE = float(os.getenv('FACE_RECOGNITION_TOLERANCE', 0.5))
     # Minimum confidence (0-1) to record attendance; avoids mis-identifying as another person.
     ATTENDANCE_MIN_CONFIDENCE = float(os.getenv('ATTENDANCE_MIN_CONFIDENCE', 0.75))
+    # Raw confidence value that maps to 100% display (model typically tops out ~0.6; scale 0-100%).
+    CONFIDENCE_100_PCT_RAW = float(os.getenv('CONFIDENCE_100_PCT_RAW', 0.6))
     
     # Camera Configuration - 16:9 Aspect Ratio for Industrial RPi5 with Shield
     CAMERA_WIDTH = int(os.getenv('CAMERA_WIDTH', 960))  # 16:9 resolution
