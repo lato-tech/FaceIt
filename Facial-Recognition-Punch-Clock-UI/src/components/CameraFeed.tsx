@@ -10,8 +10,7 @@ import {
   Paper,
   IconButton,
   Tooltip,
-  Snackbar,
-  Modal
+  Snackbar
 } from '@mui/material';
 import { 
   ShieldCheckIcon, 
@@ -33,7 +32,7 @@ import {
   MemoryStick,
   ThermometerIcon,
   MapPinIcon,
-  Building2Icon
+  Building2
 } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import CityDataDisplay from './CityDataDisplay';
@@ -52,10 +51,13 @@ interface FaceDetection {
   name?: string;
   department?: string;
   photo?: string;
+  age?: number;
+  emotion?: string;
+  spoof?: boolean;
 }
 
 interface RecognitionEvent {
-  type: 'face_detected' | 'person_recognized' | 'check_in' | 'check_out' | 'error' | 'status' | 'duplicate_punch';
+  type: 'face_detected' | 'person_recognized' | 'check_in' | 'check_out' | 'error' | 'status' | 'duplicate_punch' | 'heartbeat' | 'connection';
   timestamp: string;
   data: any;
   faces?: FaceDetection[];
@@ -96,7 +98,7 @@ interface SystemStatus {
 // ===== API CONFIGURATION =====
 const API_BASE = import.meta.env.VITE_API_BASE || (window.location.protocol + '//' + window.location.hostname + ':5002/api');
 const RECONNECTION_DELAY = 3000; // 3 seconds
-const MAX_RECONNECTION_ATTEMPTS = 5;
+const MAX_RECONNECTION_ATTEMPTS = 9999;
 
 // ===== CORE COMPONENTS =====
 
@@ -483,12 +485,16 @@ const CameraFeed: React.FC = () => {
   });
   const [currentFaces, setCurrentFaces] = useState<FaceDetection[]>([]);
   const [lastRecognizedPerson, setLastRecognizedPerson] = useState<any>(null);
+  const [duplicateInfo, setDuplicateInfo] = useState<any>(null);
+  const [duplicateRemainingSec, setDuplicateRemainingSec] = useState<number | null>(null);
+  const [attendanceSettings, setAttendanceSettings] = useState({ duplicatePunchIntervalSec: 30 });
+  const [employeeDirectory, setEmployeeDirectory] = useState<Record<string, any>>({});
+  const [recognizedAt, setRecognizedAt] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [deviceSettings, setDeviceSettings] = useState<{ organization?: string; location?: string }>({});
   const [systemStats, setSystemStats] = useState<any>(null);
   const [showOverlays, setShowOverlays] = useState(true);
-  const [recognizedModal, setRecognizedModal] = useState<any>(null);
-  const [duplicateModal, setDuplicateModal] = useState<any>(null);
+  // Modal windows disabled; use overlay-only UI
   const [editingLog, setEditingLog] = useState<AttendanceLog | null>(null);
   const [trainingNotice, setTrainingNotice] = useState<{ open: boolean; message: string; severity: 'success' | 'error' | 'info' }>({
     open: false,
@@ -496,16 +502,17 @@ const CameraFeed: React.FC = () => {
     severity: 'info',
   });
   const [isTraining, setIsTraining] = useState(false);
+  const [lastFacesAt, setLastFacesAt] = useState<number | null>(null);
+  const [lastEventAt, setLastEventAt] = useState<number | null>(null);
 
   // Refs
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
+  const logLookupRef = useRef<string | null>(null);
 
   // Custom hooks
   const { cameraStatus, systemStatus, startCamera, stopCamera, restartCamera } = useCameraControls();
   const { events, connectionStatus } = useRecognitionStream(cameraStatus === 'active');
-
-  // Update stats from events
 
   // Auto-start camera when component mounts (only if health check passes)
   useEffect(() => {
@@ -556,6 +563,109 @@ const CameraFeed: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    const fetchEmployees = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/employees`);
+        if (!response.ok) return;
+        const data = await response.json();
+        if (cancelled || !data?.employees) return;
+        const next: Record<string, any> = {};
+        data.employees.forEach((emp: any) => {
+          if (emp?.id) next[String(emp.id)] = emp;
+          if (emp?.name) next[String(emp.name)] = emp;
+        });
+        setEmployeeDirectory(next);
+      } catch (error) {
+        console.error('Error fetching employees:', error);
+      }
+    };
+    fetchEmployees();
+    const interval = setInterval(fetchEmployees, 60000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
+
+  useEffect(() => {
+    const fetchAttendanceSettings = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/system/attendance-settings`);
+        if (response.ok) {
+          const data = await response.json();
+          setAttendanceSettings((prev) => ({
+            ...prev,
+            duplicatePunchIntervalSec: Number(data.duplicatePunchIntervalSec ?? prev.duplicatePunchIntervalSec),
+          }));
+        }
+      } catch (error) {
+        console.error('Error fetching attendance settings:', error);
+      }
+    };
+    fetchAttendanceSettings();
+  }, []);
+
+  useEffect(() => {
+    if (!lastRecognizedPerson || lastRecognizedPerson.log_id) return;
+    const key = lastRecognizedPerson.employee_id || lastRecognizedPerson.id || lastRecognizedPerson.name;
+    if (!key) return;
+    const keyStr = String(key);
+    if (logLookupRef.current === keyStr) return;
+    logLookupRef.current = keyStr;
+    let cancelled = false;
+    const fetchLatestLog = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/attendance`);
+        if (!response.ok) return;
+        const data = await response.json();
+        const logs = Array.isArray(data?.attendance) ? data.attendance : [];
+        const match = logs.find((log: any) => (
+          String(log.employee_id) === keyStr || String(log.employee_name) === keyStr
+        ));
+        if (cancelled || !match) return;
+        setLastRecognizedPerson((prev: any) => {
+          if (!prev) return prev;
+          if (prev.log_id) return prev;
+          return {
+            ...prev,
+            log_id: match.id,
+            timestamp: match.timestamp || prev.timestamp,
+            event_type: match.event_type || prev.event_type,
+            employee_id: match.employee_id || prev.employee_id,
+            employee_name: match.employee_name || prev.employee_name,
+          };
+        });
+      } catch (error) {
+        console.error('Error fetching attendance logs:', error);
+      }
+    };
+    fetchLatestLog();
+    return () => {
+      cancelled = true;
+    };
+  }, [lastRecognizedPerson]);
+
+  const resolveProfilePhoto = useCallback((photo?: string, employeeId?: string) => {
+    const apiRoot = API_BASE.replace(/\/api$/, '');
+    if (photo) {
+      if (photo.startsWith('http://') || photo.startsWith('https://')) return photo;
+      if (photo.startsWith('/')) return `${apiRoot}${photo}`;
+      return `${apiRoot}/${photo}`;
+    }
+    if (employeeId) {
+      return `${apiRoot}/api/profiles/${employeeId}.jpg`;
+    }
+    return '';
+  }, []);
+
+  const overlaySource = lastRecognizedPerson || duplicateInfo;
+  const overlayName = overlaySource?.employee_name || overlaySource?.name || '';
+  const overlayId = overlaySource?.employee_id || overlaySource?.id || '';
+  const overlayDept = overlaySource?.department || '';
+  const overlayTitle = overlayName && overlayId ? `${overlayName} (${overlayId})` : (overlayName || overlayId || 'Unknown');
+
   const mapRecognitionsToFaces = useCallback((recognitions: RecognitionEvent['recognitions'] = []) => {
     return recognitions.map(rec => {
       const loc = rec.location || {};
@@ -581,6 +691,7 @@ const CameraFeed: React.FC = () => {
   useEffect(() => {
     if (events.length > 0) {
       const lastEvent = events[events.length - 1];
+      setLastEventAt(Date.now());
       
       setStats(prev => ({
         ...prev,
@@ -594,22 +705,39 @@ const CameraFeed: React.FC = () => {
         case 'face_detected':
           if (lastEvent.faces && Array.isArray(lastEvent.faces) && lastEvent.faces.length > 0) {
             setCurrentFaces(lastEvent.faces);
+            setLastFacesAt(Date.now());
             setStats(prev => ({
               ...prev,
               facesDetected: prev.facesDetected + lastEvent.faces!.length
             }));
           } else {
             setCurrentFaces([]);
+            setLastFacesAt(Date.now());
           }
           break;
         
         case 'person_recognized':
           if (lastEvent.data) {
-            setLastRecognizedPerson(lastEvent.data);
-            setRecognizedModal({
+            const employeeId = lastEvent.data?.employee_id || lastEvent.data?.id || lastEvent.data?.name;
+            const directoryEntry = employeeId ? employeeDirectory[String(employeeId)] : undefined;
+            const resolvedName = lastEvent.data?.employee_name || directoryEntry?.name || lastEvent.data?.name || 'Unknown';
+            const resolvedId = lastEvent.data?.employee_id || directoryEntry?.id || lastEvent.data?.id || lastEvent.data?.name || '';
+            const resolvedDept = lastEvent.data?.department || directoryEntry?.department || '';
+            const resolvedPhoto = resolveProfilePhoto(
+              lastEvent.data?.photo || directoryEntry?.photo,
+              resolvedId
+            );
+            setLastRecognizedPerson({
               ...lastEvent.data,
+              name: resolvedName,
+              employee_name: resolvedName,
+              id: resolvedId,
+              employee_id: resolvedId,
+              department: resolvedDept,
+              photo: resolvedPhoto || lastEvent.data?.photo,
               timestamp: lastEvent.data?.timestamp || lastEvent.timestamp || new Date().toISOString(),
             });
+            setRecognizedAt(Date.now());
             setStats(prev => ({
               ...prev,
               facesRecognized: prev.facesRecognized + 1
@@ -619,8 +747,20 @@ const CameraFeed: React.FC = () => {
         
         case 'duplicate_punch':
           if (lastEvent.data) {
-            setDuplicateModal({
+            const employeeId = lastEvent.data?.employee_id || lastEvent.data?.name;
+            const directoryEntry = employeeId ? employeeDirectory[String(employeeId)] : undefined;
+            const resolvedName = lastEvent.data?.employee_name || directoryEntry?.name || employeeId || 'Employee';
+            const resolvedId = lastEvent.data?.employee_id || directoryEntry?.id || employeeId || '';
+            const resolvedPhoto = resolveProfilePhoto(
+              directoryEntry?.photo,
+              resolvedId
+            );
+            setDuplicateInfo({
               ...lastEvent.data,
+              employee_name: resolvedName,
+              employee_id: resolvedId,
+              department: directoryEntry?.department || '',
+              photo: resolvedPhoto,
               timestamp: lastEvent.timestamp || new Date().toISOString(),
             });
           }
@@ -635,8 +775,10 @@ const CameraFeed: React.FC = () => {
           }
           if (Array.isArray(lastEvent.recognitions) && lastEvent.recognitions.length > 0) {
             setCurrentFaces(mapRecognitionsToFaces(lastEvent.recognitions));
+            setLastFacesAt(Date.now());
           } else {
             setCurrentFaces([]);
+            setLastFacesAt(Date.now());
           }
           break;
         
@@ -716,8 +858,8 @@ const CameraFeed: React.FC = () => {
 
   // Continuous drawing for video stream
   useEffect(() => {
-    if (cameraStatus === 'active' && currentFaces.length > 0 && showOverlays) {
-      const interval = setInterval(drawFaceOverlay, 750);
+    if (cameraStatus === 'active' && showOverlays) {
+      const interval = setInterval(drawFaceOverlay, 250);
       return () => clearInterval(interval);
     }
   }, [cameraStatus, currentFaces, drawFaceOverlay, showOverlays]);
@@ -731,6 +873,30 @@ const CameraFeed: React.FC = () => {
       }
     }
   }, [showOverlays]);
+  useEffect(() => {
+    if (!showOverlays || cameraStatus !== 'active') return;
+    const interval = setInterval(() => {
+      if (!lastFacesAt) return;
+      if (Date.now() - lastFacesAt > 2000) {
+        setCurrentFaces([]);
+      }
+    }, 500);
+    return () => clearInterval(interval);
+  }, [showOverlays, cameraStatus, lastFacesAt]);
+  useEffect(() => {
+    if (!showOverlays || cameraStatus !== 'active') return;
+    const interval = setInterval(() => {
+      if (!lastEventAt) return;
+      if (Date.now() - lastEventAt > 1500) {
+        setCurrentFaces([]);
+      }
+    }, 500);
+    return () => clearInterval(interval);
+  }, [showOverlays, cameraStatus, lastEventAt]);
+  useEffect(() => {
+    setCurrentFaces([]);
+    setLastFacesAt(null);
+  }, [cameraStatus, connectionStatus]);
 
   // Handle video events
   const handleVideoReady = useCallback(() => {
@@ -748,6 +914,41 @@ const CameraFeed: React.FC = () => {
       return () => clearTimeout(timer);
     }
   }, [error]);
+  useEffect(() => {
+    if (!recognizedAt) return;
+    const timer = setTimeout(() => {
+      setLastRecognizedPerson(null);
+      setRecognizedAt(null);
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [recognizedAt]);
+
+  useEffect(() => {
+    if (!duplicateInfo) {
+      setDuplicateRemainingSec(null);
+      return;
+    }
+
+    const computeRemaining = () => {
+      const interval = Number(attendanceSettings.duplicatePunchIntervalSec || 0);
+      let elapsed = 0;
+      if (duplicateInfo.last_punch_time) {
+        const lastPunchMs = new Date(duplicateInfo.last_punch_time).getTime();
+        elapsed = Math.max(0, (Date.now() - lastPunchMs) / 1000);
+      } else if (typeof duplicateInfo.elapsed_seconds === 'number') {
+        elapsed = duplicateInfo.elapsed_seconds;
+      }
+      const remaining = Math.max(0, interval - elapsed);
+      setDuplicateRemainingSec(remaining);
+      if (remaining <= 0) {
+        setDuplicateInfo(null);
+      }
+    };
+
+    computeRemaining();
+    const intervalId = setInterval(computeRemaining, 250);
+    return () => clearInterval(intervalId);
+  }, [duplicateInfo, attendanceSettings.duplicatePunchIntervalSec]);
 
   const handleTrainFaces = async () => {
     try {
@@ -868,7 +1069,7 @@ const CameraFeed: React.FC = () => {
           >
             {deviceSettings.organization && (
               <Box display="flex" alignItems="center" gap={0.5}>
-                <Building2Icon size={16} />
+                <Building2 size={16} />
                 <Typography variant="body2">
                   {deviceSettings.organization}
                 </Typography>
@@ -886,7 +1087,7 @@ const CameraFeed: React.FC = () => {
         )}
 
         {/* Last Recognized Person */}
-        {lastRecognizedPerson && showOverlays && (
+        {(lastRecognizedPerson || duplicateInfo) && showOverlays && (
           <Box
             sx={{
               position: 'absolute',
@@ -895,7 +1096,7 @@ const CameraFeed: React.FC = () => {
               maxWidth: 420,
               bgcolor: 'background.paper',
               border: '1px solid',
-              borderColor: 'success.main',
+              borderColor: duplicateInfo ? 'warning.main' : 'success.main',
               borderRadius: 2,
               p: 2,
               boxShadow: 3
@@ -903,27 +1104,59 @@ const CameraFeed: React.FC = () => {
           >
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
               <Avatar
-                src={lastRecognizedPerson.photo}
-                alt={lastRecognizedPerson.name}
+                src={lastRecognizedPerson?.photo || duplicateInfo?.photo}
+                alt={overlayTitle}
                 sx={{ width: 48, height: 48 }}
               />
               <Box flex={1}>
                 <Typography variant="h6" fontWeight="bold">
-                  {lastRecognizedPerson.name}
+                  {overlayTitle}
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
-                  {lastRecognizedPerson.id} • {lastRecognizedPerson.department}
+                  {overlayDept ? overlayDept : ' '}
                 </Typography>
                 <Typography variant="caption" color="success.main">
-                  Recognized at {new Date().toLocaleTimeString()}
+                  {lastRecognizedPerson
+                    ? `Recognized at ${lastRecognizedPerson.timestamp
+                        ? new Date(lastRecognizedPerson.timestamp).toLocaleTimeString()
+                        : '-'}`
+                    : ''}
                 </Typography>
+                {duplicateInfo && (
+                  <Typography variant="caption" color="warning.main" display="block">
+                    Duplicate ignored • Try again in {duplicateRemainingSec != null ? `${duplicateRemainingSec.toFixed(1)}s` : '-'}
+                  </Typography>
+                )}
               </Box>
-              <Chip 
-                label="Recognized" 
-                color="success" 
-                size="small"
-                icon={<ShieldCheckIcon size={16} />}
-              />
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, alignItems: 'flex-end' }}>
+                <Chip 
+                  label={duplicateInfo ? 'Duplicate' : 'Recognized'}
+                  color={duplicateInfo ? 'warning' : 'success'}
+                  size="small"
+                  icon={<ShieldCheckIcon size={16} />}
+                />
+                {lastRecognizedPerson && (
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    disabled={!lastRecognizedPerson?.log_id}
+                    onClick={() => {
+                      const logId = lastRecognizedPerson?.log_id;
+                      if (!logId) return;
+                      setEditingLog({
+                        id: String(logId),
+                        employeeId: lastRecognizedPerson?.employee_id || lastRecognizedPerson?.name || '',
+                        employeeName: lastRecognizedPerson?.employee_name || lastRecognizedPerson?.name || '',
+                        type: lastRecognizedPerson?.event_type || 'check-in',
+                        timestamp: lastRecognizedPerson?.timestamp || new Date().toISOString(),
+                        status: 'modified',
+                      } as AttendanceLog);
+                    }}
+                  >
+                    Edit
+                  </Button>
+                )}
+              </Box>
             </Box>
           </Box>
         )}
@@ -1007,94 +1240,6 @@ const CameraFeed: React.FC = () => {
         )}
       </Box>
 
-      {/* Recognized Modal */}
-      <Modal open={Boolean(recognizedModal)} onClose={() => setRecognizedModal(null)}>
-        <Box
-          sx={{
-            position: 'absolute',
-            top: 24,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            bgcolor: 'background.paper',
-            borderRadius: 2,
-            p: 2,
-            minWidth: 320,
-            boxShadow: 24,
-          }}
-        >
-          <Typography variant="h6" fontWeight="bold" gutterBottom>
-            Face Recognized
-          </Typography>
-          <Typography variant="body2">Name: {recognizedModal?.employee_name || recognizedModal?.name || 'Unknown'}</Typography>
-          <Typography variant="body2">Code: {recognizedModal?.employee_id || recognizedModal?.name || '-'}</Typography>
-          <Typography variant="body2">
-            Time: {recognizedModal?.timestamp ? new Date(recognizedModal.timestamp).toLocaleTimeString() : '-'}
-          </Typography>
-          <Typography variant="body2">
-            Date: {recognizedModal?.timestamp ? new Date(recognizedModal.timestamp).toLocaleDateString() : '-'}
-          </Typography>
-          <Typography variant="body2">Log Type: {recognizedModal?.event_type || 'check-in'}</Typography>
-          <Box display="flex" gap={1} justifyContent="flex-end" mt={2}>
-            <Button variant="outlined" onClick={() => setRecognizedModal(null)}>
-              Close
-            </Button>
-            <Button
-              variant="contained"
-              disabled={!recognizedModal?.log_id}
-              onClick={() => {
-                const logId = recognizedModal?.log_id;
-                if (!logId) return;
-                setEditingLog({
-                  id: String(logId),
-                  employeeId: recognizedModal?.employee_id || recognizedModal?.name || '',
-                  employeeName: recognizedModal?.employee_name || recognizedModal?.name || '',
-                  type: recognizedModal?.event_type || 'check-in',
-                  timestamp: recognizedModal?.timestamp || new Date().toISOString(),
-                  status: 'modified',
-                });
-              }}
-            >
-              Edit
-            </Button>
-          </Box>
-        </Box>
-      </Modal>
-
-      {/* Duplicate Punch Modal */}
-      <Modal open={Boolean(duplicateModal)} onClose={() => setDuplicateModal(null)}>
-        <Box
-          sx={{
-            position: 'absolute',
-            top: 24,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            bgcolor: 'background.paper',
-            borderRadius: 2,
-            p: 2,
-            minWidth: 320,
-            boxShadow: 24,
-          }}
-        >
-          <Typography variant="h6" fontWeight="bold" gutterBottom>
-            Duplicate Punch
-          </Typography>
-          <Typography variant="body2">Name: {duplicateModal?.employee_name || duplicateModal?.employee_id}</Typography>
-          <Typography variant="body2">Code: {duplicateModal?.employee_id}</Typography>
-          <Typography variant="body2">
-            Last Punch: {duplicateModal?.last_punch_time ? new Date(duplicateModal.last_punch_time).toLocaleString() : '-'}
-          </Typography>
-          <Typography variant="body2">
-            Duration: {duplicateModal?.elapsed_seconds != null ? `${duplicateModal.elapsed_seconds}s` : '-'}
-          </Typography>
-          <Typography variant="body2">Punch Type: {duplicateModal?.event_type || 'check-in'}</Typography>
-          <Box display="flex" justifyContent="flex-end" mt={2}>
-            <Button variant="outlined" onClick={() => setDuplicateModal(null)}>
-              Close
-            </Button>
-          </Box>
-        </Box>
-      </Modal>
-
       {editingLog && (
         <EditAttendanceLogModal
           isOpen={true}
@@ -1169,14 +1314,6 @@ const CameraFeed: React.FC = () => {
           </Button>
           <Button
             variant="outlined"
-            startIcon={<UserIcon size={16} />}
-            onClick={handleTrainFaces}
-            disabled={isTraining}
-          >
-            {isTraining ? 'Training...' : 'Train Faces'}
-          </Button>
-          <Button
-            variant="outlined"
             onClick={() => setShowOverlays(prev => !prev)}
           >
             {showOverlays ? 'Hide Overlay' : 'Show Overlay'}
@@ -1203,19 +1340,6 @@ const CameraFeed: React.FC = () => {
           />
         </Box>
       </Box>
-
-      <style>
-        {`
-        @keyframes scan {
-          0% { transform: translateY(0); }
-          100% { transform: translateY(100%); }
-        }
-        @keyframes pulse {
-          0%, 100% { transform: scale(1); opacity: 1; }
-          50% { transform: scale(1.2); opacity: 0.7; }
-        }
-        `}
-      </style>
     </Box>
   );
 };

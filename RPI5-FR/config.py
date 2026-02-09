@@ -20,12 +20,12 @@ class Config:
     # Face Recognition Configuration
     FACES_DIRECTORY = os.getenv('FACES_DIRECTORY', 'faces')
     ATTENDANCE_COOLDOWN = int(os.getenv('ATTENDANCE_COOLDOWN', 30))  # seconds
-    FACE_RECOGNITION_TOLERANCE = float(os.getenv('FACE_RECOGNITION_TOLERANCE', 0.6))  # Balanced tolerance for better matching
+    FACE_RECOGNITION_TOLERANCE = float(os.getenv('FACE_RECOGNITION_TOLERANCE', 0.7))  # Lower confidence accepted
     
     # Camera Configuration - 16:9 Aspect Ratio for Industrial RPi5 with Shield
     CAMERA_WIDTH = int(os.getenv('CAMERA_WIDTH', 960))  # 16:9 resolution
     CAMERA_HEIGHT = int(os.getenv('CAMERA_HEIGHT', 540))  # 16:9 resolution (960x540)
-    CAMERA_FPS = int(os.getenv('CAMERA_FPS', 12))  # Lower FPS to reduce CPU
+    CAMERA_FPS = int(os.getenv('CAMERA_FPS', 15))  # Slightly higher FPS for smoother stream
     
     # Camera Port Configuration
     CAMERA_PORT = os.getenv('CAMERA_PORT', 'CSI0')  # CSI0 for primary port
@@ -81,4 +81,4 @@ class Config:
                 return 'windows'
             else:
                 return 'unknown'
-        return cls.PLATFORM 
+        return cls.PLATFORM

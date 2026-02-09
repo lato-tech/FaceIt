@@ -18,6 +18,7 @@
 **/*.log
 RPI5-FR/logs/
 RPI5-FR/server.log
+RPI5-FR/backend.out
 
 # Databases
 RPI5-FR/db/*.db

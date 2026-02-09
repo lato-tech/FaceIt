@@ -333,7 +333,7 @@ const AttendanceLogs: React.FC = () => {
               if (!response.ok) {
                 throw new Error('Failed to update attendance log');
               }
-              setData((prev) => prev.map((log) => (log.id === logData.id ? logData : log)));
+              setAttendanceLogs((prev) => prev.map((log) => (log.id === logData.id ? logData : log)));
               setEditingLog(null);
             } catch (error) {
               console.error('Error updating attendance:', error);

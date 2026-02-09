@@ -7,10 +7,11 @@ import os
 import numpy as np
 import face_recognition
 from datetime import datetime
+import time
 
 class FaceDetector:
 
-    def __init__(self, known_face_encodings=None, known_face_names=None, recognition_tolerance=0.4):
+    def __init__(self, known_face_encodings=None, known_face_names=None, recognition_tolerance=0.6):
         base_path = "./face_detection/"
         
         # Initialize Haar cascades
@@ -23,7 +24,9 @@ class FaceDetector:
         self.known_face_encodings = known_face_encodings or []
         self.known_face_names = known_face_names or []
         self.recognition_tolerance = recognition_tolerance
-        self.min_confidence_threshold = 0.6  # Balanced threshold for recognition
+        # Use distance-based threshold (face_recognition default is 0.6)
+        self.min_confidence_threshold = 0.4  # 1 - 0.6
+        self.last_recognized = {'name': None, 'ts': 0.0}
 
     def update_known_faces(self, known_face_encodings, known_face_names):
         """Update the known faces for recognition"""
@@ -84,8 +87,18 @@ class FaceDetector:
                 print(f"⚠️  Invalid frame format: shape={frame.shape}")
                 return []
             
+            # Downscale for faster recognition on RPi, then scale results back
+            h, w = frame.shape[:2]
+            target_width = 640
+            scale = 1.0
+            resized = frame
+            if w > target_width:
+                scale = target_width / float(w)
+                new_h = max(1, int(h * scale))
+                resized = cv2.resize(frame, (target_width, new_h), interpolation=cv2.INTER_AREA)
+            
             # Convert BGR to RGB for face_recognition library
-            rgb_image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            rgb_image = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
             
             # Find faces using face_recognition library (more accurate than Haar cascades)
             face_locations = face_recognition.face_locations(rgb_image)
@@ -102,21 +115,37 @@ class FaceDetector:
                     # Calculate confidence (distance-based)
                     confidence = 1.0 - min_distance
                     
-                    # Only consider it a match if confidence is above threshold
-                    if confidence >= self.min_confidence_threshold:
+                    # Only consider it a match if distance is within tolerance
+                    if min_distance <= self.recognition_tolerance:
                         name = self.known_face_names[min_distance_index]
                         print(f"🔍 Face {i+1}: {name} (confidence: {confidence:.3f}, distance: {min_distance:.3f})")
                     else:
-                        name = "Unknown"
-                        confidence = 0.0
-                        print(f"🔍 Face {i+1}: Unknown (best distance: {min_distance:.3f}, threshold: {self.min_confidence_threshold})")
+                        # Stabilize recognition if we recently matched the same person
+                        now = time.time()
+                        last_name = self.last_recognized.get('name')
+                        last_ts = self.last_recognized.get('ts', 0.0)
+                        if last_name and (now - last_ts) <= 2.0 and min_distance <= (self.recognition_tolerance + 0.08):
+                            name = last_name
+                            print(f"🔁 Face {i+1}: {name} (stabilized, distance: {min_distance:.3f})")
+                        else:
+                            name = "Unknown"
+                            print(f"🔍 Face {i+1}: Unknown (best distance: {min_distance:.3f}, tolerance: {self.recognition_tolerance})")
                 else:
                     name = "Unknown"
                     confidence = 0.0
                     print(f"🔍 Face {i+1}: Unknown (no known faces loaded)")
                 
-                # Get face location for bounding box
+                # Get face location for bounding box (scale back to original)
                 top, right, bottom, left = face_location
+                if scale != 1.0:
+                    inv_scale = 1.0 / scale
+                    top = int(top * inv_scale)
+                    right = int(right * inv_scale)
+                    bottom = int(bottom * inv_scale)
+                    left = int(left * inv_scale)
+                
+                if name != "Unknown":
+                    self.last_recognized = {'name': name, 'ts': time.time()}
                 
                 results.append({
                     'name': name,

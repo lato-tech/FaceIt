@@ -127,6 +127,7 @@ const FaceRegistration: React.FC<FaceRegistrationProps> = ({ employeeId: propEmp
   const [lastFrameAt, setLastFrameAt] = useState<number | null>(null);
   const [streamErrors, setStreamErrors] = useState(0);
   const [frameUrl, setFrameUrl] = useState<string | null>(null);
+  const [streamNonce, setStreamNonce] = useState(0);
   const [faceStatus, setFaceStatus] = useState<FaceDetectionResult | null>(null);
   const [isDetecting, setIsDetecting] = useState(false);
   const [autoCaptureCountdown, setAutoCaptureCountdown] = useState<number | null>(null);
@@ -276,7 +277,7 @@ const FaceRegistration: React.FC<FaceRegistrationProps> = ({ employeeId: propEmp
       if (!active || snapshotInFlightRef.current) return;
       snapshotInFlightRef.current = true;
       try {
-        const response = await fetch(`${API_BASE}/camera/snapshot?ts=${Date.now()}`, {
+        const response = await fetch(`${API_BASE}/camera/snapshot?ts=${Date.now()}&w=480&h=270&q=70`, {
           cache: 'no-store',
         });
         if (!response.ok) {
@@ -303,7 +304,7 @@ const FaceRegistration: React.FC<FaceRegistrationProps> = ({ employeeId: propEmp
     };
 
     fetchSnapshot();
-    const snapshotInterval = setInterval(fetchSnapshot, 600);
+    const snapshotInterval = setInterval(fetchSnapshot, 400);
 
     return () => {
       active = false;
@@ -429,7 +430,7 @@ const FaceRegistration: React.FC<FaceRegistrationProps> = ({ employeeId: propEmp
 
     // Start detection immediately, then continue with interval
     startDetection();
-    detectionIntervalRef.current = setInterval(startDetection, 1000);
+    detectionIntervalRef.current = setInterval(startDetection, 700);
     
     return () => {
       if (detectionIntervalRef.current) {
@@ -682,7 +683,7 @@ const FaceRegistration: React.FC<FaceRegistrationProps> = ({ employeeId: propEmp
             {/* Video Stream */}
             <img
               ref={videoRef}
-              src={frameUrl || ''}
+              src={`${API_BASE}/camera/stream?ts=${streamNonce}&w=480&h=270&q=60`}
               alt="Camera feed"
               style={{
                 width: '100%',
@@ -691,6 +692,14 @@ const FaceRegistration: React.FC<FaceRegistrationProps> = ({ employeeId: propEmp
                 display: 'block',
                 transform: 'scaleX(-1)',
                 transformOrigin: 'center',
+              }}
+              onLoad={() => {
+                markStreamReady();
+                setLastFrameAt(Date.now());
+              }}
+              onError={() => {
+                setCameraError('Failed to load camera stream');
+                setStreamNonce((prev) => prev + 1);
               }}
             />
 

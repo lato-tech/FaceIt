@@ -1,17 +1,30 @@
 import React, { useState } from 'react';
-import { Dialog, DialogTitle, DialogContent, DialogActions, TextField, Button, IconButton, Box, Typography } from '@mui/material';
+import {
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+  Button,
+  IconButton,
+  Box,
+  Typography,
+  Stepper,
+  Step,
+  StepLabel,
+  Paper,
+} from '@mui/material';
 import { XIcon } from 'lucide-react';
-import { useLanguage } from '../../utils/i18n';
 import FaceRegistration from './FaceRegistration';
+import { Employee } from '../../utils/types';
 
 interface AddEmployeeModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (employeeData: any) => void;
+  onSubmit: (employeeData: Employee) => void;
 }
 
 const AddEmployeeModal = ({ isOpen, onClose, onSubmit }: AddEmployeeModalProps) => {
-  const { t } = useLanguage();
   const [step, setStep] = useState<'info' | 'face'>('info');
   const [formData, setFormData] = useState({
     id: '',
@@ -19,25 +32,24 @@ const AddEmployeeModal = ({ isOpen, onClose, onSubmit }: AddEmployeeModalProps) 
     department: '',
     photo: '',
     joinDate: '',
-    faceData: null,
+    faceData: null as { registered: boolean; employeeId: string } | null,
   });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // Validate required fields
-    if (!formData.id || !formData.name || !formData.department || !formData.joinDate) {
-      alert('Please fill in all required fields (ID, Name, Department, Join Date)');
+    if (!formData.id || !formData.name || !formData.department) {
+      alert('Please fill in ID, Name, and Department');
       return;
     }
-    
     onSubmit({
-      ...formData,
+      id: formData.id,
+      name: formData.name,
+      department: formData.department,
+      photo: formData.photo,
+      joinDate: formData.joinDate,
       active: true,
-      faceRegistered: !!formData.faceData, // Mark if face was registered
+      faceRegistered: !!formData.faceData,
     });
-    
-    // Reset form
     setFormData({ id: '', name: '', department: '', photo: '', joinDate: '', faceData: null });
     setStep('info');
     onClose();
@@ -46,31 +58,43 @@ const AddEmployeeModal = ({ isOpen, onClose, onSubmit }: AddEmployeeModalProps) 
   const handleCrossClick = () => {
     setStep('info');
     onClose();
-  
-  }
+  };
 
   const handleFaceCapture = (employeeId: string, profilePhotoUrl?: string) => {
-    // Face registration completed - mark as registered and sync profile photo
     setFormData((prev) => ({
       ...prev,
       photo: profilePhotoUrl || prev.photo,
-      faceData: { registered: true, employeeId }
+      faceData: { registered: true, employeeId },
     }));
     setStep('info');
+    onClose();
+    onSubmit({
+      id: formData.id || employeeId,
+      name: formData.name,
+      department: formData.department,
+      photo: profilePhotoUrl || formData.photo,
+      joinDate: formData.joinDate,
+      active: true,
+      faceRegistered: true,
+    });
   };
 
   return (
-    <Dialog open={isOpen} onClose={onClose} slotProps={{
-      paper: {
-        sx: {
-          maxWidth: step !== 'info' ? "900px" : '800px',
-          width: '100%',
-        }
-      }
-    }} fullWidth>
+    <Dialog
+      open={isOpen}
+      onClose={onClose}
+      slotProps={{
+        paper: {
+          sx: {
+            maxWidth: step !== 'info' ? '900px' : '800px',
+            width: '100%',
+          },
+        },
+      }}
+      fullWidth
+    >
       <DialogTitle>
-        {step === 'info' ? "Add employee" 
-        :"Register face"}
+        {step === 'info' ? 'Add employee' : 'Register face'}
         <IconButton
           aria-label="close"
           onClick={handleCrossClick}
@@ -80,7 +104,17 @@ const AddEmployeeModal = ({ isOpen, onClose, onSubmit }: AddEmployeeModalProps) 
         </IconButton>
       </DialogTitle>
 
-      <DialogContent  dividers>
+      <DialogContent dividers>
+        <Box sx={{ mb: 2 }}>
+          <Stepper activeStep={step === 'info' ? 0 : 1} alternativeLabel>
+            <Step>
+              <StepLabel>Employee Info</StepLabel>
+            </Step>
+            <Step>
+              <StepLabel>Face Registration</StepLabel>
+            </Step>
+          </Stepper>
+        </Box>
         {step === 'info' ? (
           <Box component="form" onSubmit={handleSubmit} sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             <TextField
@@ -111,44 +145,49 @@ const AddEmployeeModal = ({ isOpen, onClose, onSubmit }: AddEmployeeModalProps) 
             <TextField
               label="Join Date"
               type="date"
-              required
               InputLabelProps={{ shrink: true }}
               value={formData.joinDate}
               onChange={(e) => setFormData({ ...formData, joinDate: e.target.value })}
             />
           </Box>
         ) : (
-          <FaceRegistration 
-            employeeId={formData.id || undefined}
-            onCapture={handleFaceCapture} 
-            onCancel={() => setStep('info')} 
-          />
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <Paper variant="outlined" sx={{ p: 2, bgcolor: 'background.default' }}>
+              <Typography variant="subtitle1" fontWeight={600}>
+                Tips for best results
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Keep your face centered, remove glare on glasses, and move slowly to capture all angles.
+              </Typography>
+            </Paper>
+            <FaceRegistration
+              employeeId={formData.id || undefined}
+              onCapture={handleFaceCapture}
+              onCancel={() => setStep('info')}
+            />
+          </Box>
         )}
       </DialogContent>
 
       {step === 'info' && (
         <DialogActions>
-          <Button 
-            variant="outlined" 
-            onClick={() => {
-              // Allow registering face even without employee ID (will use ID from form)
-              // If no ID entered, we'll prompt in face registration
-              setStep('face');
-            }}
+          <Button
+            variant="outlined"
+            onClick={() => setStep('face')}
+            disabled={!formData.id || !formData.name || !formData.department}
           >
             {formData.faceData ? 'Re-register Face' : 'Register Face'}
           </Button>
-          
           {formData.faceData && (
             <Typography variant="caption" color="success.main" sx={{ mt: 1, display: 'block', textAlign: 'center' }}>
               ✓ Face registered for {formData.id || 'this employee'}
             </Typography>
           )}
-          <Button 
-            type="submit" 
-            variant="contained" 
-            onClick={handleSubmit} 
-            disabled={!formData.id || !formData.name || !formData.department || !formData.joinDate}
+          <Button
+            type="submit"
+            variant="contained"
+            onClick={handleSubmit}
+            disabled={!formData.id || !formData.name || !formData.department}
           >
             Add Employee {formData.faceData ? '(with face)' : '(without face)'}
           </Button>

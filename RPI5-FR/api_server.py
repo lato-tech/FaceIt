@@ -47,6 +47,17 @@ def log_face_registration(message):
     except Exception as e:
         print("⚠️  Face registration log error: %s" % e)
 
+# Stream tuning (lower size/quality for snappier MJPEG)
+STREAM_WIDTH = 640
+STREAM_HEIGHT = 360
+STREAM_JPEG_QUALITY = 70
+STREAM_MIN_WIDTH = 320
+STREAM_MAX_WIDTH = 1280
+STREAM_MIN_HEIGHT = 240
+STREAM_MAX_HEIGHT = 720
+STREAM_MIN_QUALITY = 50
+STREAM_MAX_QUALITY = 90
+
 # Event logs (anti-spoofing, multi-face, detection stats)
 event_log_lock = threading.Lock()
 event_log_last = {}
@@ -157,15 +168,26 @@ event_source_lock = threading.Lock()
 #   Optimized Pipeline Variables
 frame_buffer = []
 frame_buffer_lock = threading.Lock()
-frame_buffer_max_size = 2  # Keep last 2 frames to reduce memory churn
+# RAM tuning: keep more frames in memory to smooth stream + recognition handoff.
+# 8 frames at 1280x720 BGR is ~22MB; acceptable with 16GB RAM.
+frame_buffer_max_size = 8
 recognition_thread = None
 recognition_active = False
 last_recognition_time = 0
-recognition_interval = 1.2  # Process recognition every 1200ms
+recognition_interval = 0.6  # Process recognition every 600ms
 last_face_detection_time = 0
 face_detection_cooldown = 3.0  # Skip recognition for 3s if no faces
+last_empty_broadcast_time = 0.0
+empty_broadcast_interval = 0.5
 last_attribute_time = 0
 system_stats_thread = None
+last_recognition_heartbeat = 0.0
+recognition_watchdog_thread = None
+recognition_watchdog_active = False
+last_recognition_debug_log = 0.0
+last_frame_none_count = 0
+last_detection_count = 0
+last_frame_source = None
 
 # System stats logging
 SYSTEM_STATS_LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'logs', 'system_stats.log')
@@ -209,7 +231,29 @@ time_settings = {
 attendance_settings = {
     'duplicatePunchIntervalSec': Config.ATTENDANCE_COOLDOWN,
 }
+duplicate_broadcast_last = {}
 
+# RAM tuning: cache profile photos in memory to reduce disk I/O and UI stutter.
+PROFILE_PHOTO_CACHE_MAX = 50
+PROFILE_PHOTO_CACHE_TTL_SEC = 300
+profile_photo_cache = {}
+
+def _get_profile_photo_cache(cache_key: str):
+    entry = profile_photo_cache.get(cache_key)
+    if not entry:
+        return None
+    if time.time() - entry.get('ts', 0) > PROFILE_PHOTO_CACHE_TTL_SEC:
+        profile_photo_cache.pop(cache_key, None)
+        return None
+    return entry
+
+def _set_profile_photo_cache(cache_key: str, data: bytes, mime: str):
+    profile_photo_cache[cache_key] = {'data': data, 'mime': mime, 'ts': time.time()}
+    if len(profile_photo_cache) > PROFILE_PHOTO_CACHE_MAX:
+        # Evict oldest entry to cap RAM usage.
+        oldest_key = min(profile_photo_cache.items(), key=lambda item: item[1].get('ts', 0))[0]
+        profile_photo_cache.pop(oldest_key, None)
+ 
 def _get_resolution_dims(resolution: str):
     mapping = {
         '720p': (1280, 720),
@@ -662,14 +706,28 @@ def process_frame_for_recognition(frame):
 
 
 
-def generate_optimized_video_stream():
+def _parse_stream_arg(value, default, min_value, max_value):
+    try:
+        if value is None:
+            return default
+        parsed = int(value)
+        if parsed < min_value:
+            return min_value
+        if parsed > max_value:
+            return max_value
+        return parsed
+    except Exception:
+        return default
+
+
+def generate_optimized_video_stream(width=STREAM_WIDTH, height=STREAM_HEIGHT, quality=STREAM_JPEG_QUALITY):
     """  optimized video stream - smooth, non-blocking"""
     global camera_active, frame_buffer
     try:
         while True:
             if not camera_active:
-                blank_frame = np.zeros((Config.CAMERA_HEIGHT, Config.CAMERA_WIDTH, 3), dtype=np.uint8)
-                ret, buffer = cv2.imencode('.jpg', blank_frame)
+                blank_frame = np.zeros((height, width, 3), dtype=np.uint8)
+                ret, buffer = cv2.imencode('.jpg', blank_frame, [cv2.IMWRITE_JPEG_QUALITY, quality])
                 if ret:
                     frame_bytes = buffer.tobytes()
                     yield (b'--frame\r\n'
@@ -684,16 +742,24 @@ def generate_optimized_video_stream():
                     frame_buffer.append(frame.copy())
                     if len(frame_buffer) > frame_buffer_max_size:
                         frame_buffer.pop(0)  # Remove oldest frame
+                # Resize for faster, smoother streaming
+                stream_frame = frame
+                if frame.shape[1] != width or frame.shape[0] != height:
+                    stream_frame = cv2.resize(frame, (width, height))
                 # Encode frame to JPEG for streaming (non-blocking)
-                ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                ret, buffer = cv2.imencode(
+                    '.jpg',
+                    stream_frame,
+                    [cv2.IMWRITE_JPEG_QUALITY, quality]
+                )
                 if ret:
                     frame_bytes = buffer.tobytes()
                     yield (b'--frame\r\n'
                            b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
             else:
                 # Send a blank frame if camera is not available
-                blank_frame = np.zeros((Config.CAMERA_HEIGHT, Config.CAMERA_WIDTH, 3), dtype=np.uint8)
-                ret, buffer = cv2.imencode('.jpg', blank_frame)
+                blank_frame = np.zeros((height, width, 3), dtype=np.uint8)
+                ret, buffer = cv2.imencode('.jpg', blank_frame, [cv2.IMWRITE_JPEG_QUALITY, quality])
                 if ret:
                     frame_bytes = buffer.tobytes()
                     yield (b'--frame\r\n'
@@ -708,36 +774,54 @@ def generate_optimized_video_stream():
 
 def recognition_worker():
     """  optimized recognition worker - async, smart, efficient"""
-    global recognition_active, recognition_results, last_recognition_time, last_face_detection_time
+    global recognition_active, recognition_results, last_recognition_time, last_face_detection_time, last_empty_broadcast_time, last_recognition_heartbeat
+    global last_recognition_debug_log, last_frame_none_count, last_detection_count, last_frame_source
     cpu_high = False
     last_cpu_check = 0.0
+    frame_none_count = 0
+    logging.info("Recognition worker started")
 
     while recognition_active:
         try:
-            current_time = time.time()
-            if current_time - last_cpu_check >= 2.0:
+            now_ts = time.time()
+            last_recognition_heartbeat = now_ts
+            if now_ts - last_cpu_check >= 2.0:
                 try:
                     import psutil
                     cpu_high = psutil.cpu_percent(interval=0.0) >= 85.0
                 except Exception:
                     cpu_high = False
-                last_cpu_check = current_time
+                last_cpu_check = now_ts
 
-            if cpu_high:
-                time.sleep(0.5)
+            if cpu_high and (now_ts - last_recognition_time) < max(recognition_interval, 1.0):
+                time.sleep(0.2)
                 continue
             
             # Smart frame skipping: only process if enough time has passed
-            if current_time - last_recognition_time < recognition_interval:
+            if now_ts - last_recognition_time < recognition_interval:
                 time.sleep(0.1)  # Short sleep to prevent CPU spinning
                 continue
             
-            # Get latest frame from buffer
+            # Get latest frame from buffer (fallback to camera if buffer is empty)
+            frame = None
             with frame_buffer_lock:
-                if not frame_buffer:
+                if frame_buffer:
+                    frame = frame_buffer[-1].copy()  # Use latest frame
+                    last_frame_source = 'buffer'
+            if frame is None:
+                frame = get_camera_frame()
+                if frame is None:
+                    frame_none_count += 1
+                    last_frame_none_count = frame_none_count
+                    last_frame_source = 'none'
+                    if frame_none_count >= 5:
+                        ensure_camera_ready(force=True)
+                        frame_none_count = 0
                     time.sleep(0.1)
                     continue
-                frame = frame_buffer[-1].copy()  # Use latest frame
+                last_frame_source = 'camera'
+            frame_none_count = 0
+            last_frame_none_count = 0
             
             # Perform face detection and recognition in one step
             try:
@@ -746,16 +830,27 @@ def recognition_worker():
                 print(f"❌ Face detection and recognition error: {e}")
                 time.sleep(0.2)
                 continue
+
+            last_detection_count = len(results) if results is not None else 0
+            if now_ts - last_recognition_debug_log >= 5.0:
+                logging.info(
+                    "Recognition debug: frame_source=%s frame_none_count=%s results=%s cpu_high=%s",
+                    last_frame_source,
+                    last_frame_none_count,
+                    last_detection_count,
+                    cpu_high
+                )
+                last_recognition_debug_log = now_ts
             
             if not results:
                 # No faces detected - skip and extend cooldown
-                last_face_detection_time = current_time
+                last_face_detection_time = now_ts
+                with recognition_lock:
+                    recognition_results = []
+                if now_ts - last_empty_broadcast_time >= empty_broadcast_interval:
+                    broadcast_recognition_results([])
+                    last_empty_broadcast_time = now_ts
                 time.sleep(0.2)  # Longer sleep when no faces
-                continue
-            
-            # Faces detected - check if we should skip based on recent detection
-            if current_time - last_face_detection_time < face_detection_cooldown:
-                time.sleep(0.1)
                 continue
             
             # Update recognition results
@@ -863,11 +958,11 @@ def recognition_worker():
                 name = r.get('name')
                 if not name or name == 'Unknown':
                     continue
-                current_time = datetime.now()
+                now_dt = datetime.now()
                 if name not in last_attendance_time or \
-                   (current_time - last_attendance_time[name]).seconds > attendance_cooldown:
+                   (now_dt - last_attendance_time[name]).seconds > attendance_cooldown:
                     attendance_info = record_attendance(name, confidence=r.get('confidence'))
-                    last_attendance_time[name] = current_time
+                    last_attendance_time[name] = now_dt
                     if recognized_payload and recognized_payload.get('data', {}).get('name') == name:
                         recognized_payload['data'].update({
                             'log_id': attendance_info.get('id'),
@@ -877,38 +972,32 @@ def recognition_worker():
                             'event_type': attendance_info.get('event_type'),
                         })
                 else:
+                    # Within duplicate punch window: do not log attendance, but notify UI
                     last_time = last_attendance_time.get(name)
-                    elapsed_sec = int((current_time - last_time).total_seconds()) if last_time else None
+                    elapsed_sec = int((now_dt - last_time).total_seconds()) if last_time else 0
                     try:
-                        record_attendance(
-                            name,
-                            confidence=r.get('confidence'),
-                            status='Duplicate',
-                            event_type='duplicate'
-                        )
+                        now_ts = time.time()
+                        last_sent = duplicate_broadcast_last.get(name, 0)
+                        if now_ts - last_sent >= 1.0:
+                            duplicate_payload = {
+                                'type': 'duplicate_punch',
+                                'timestamp': now_dt.isoformat(),
+                                'data': {
+                                    'employee_id': name,
+                                    'employee_name': name,
+                                    'last_punch_time': last_time.isoformat() if last_time else None,
+                                    'elapsed_seconds': elapsed_sec,
+                                    'event_type': 'check-in',
+                                }
+                            }
+                            broadcast_recognition_results(None, duplicate_payload)
+                            duplicate_broadcast_last[name] = now_ts
                     except Exception as e:
-                        print(f"⚠️  Duplicate attendance log error: {e}")
-                    duplicate_payload = {
-                        'type': 'duplicate_punch',
-                        'timestamp': datetime.now().isoformat(),
-                        'data': {
-                            'employee_id': name,
-                            'employee_name': name,
-                            'last_punch_time': last_time.isoformat() if last_time else None,
-                            'elapsed_seconds': elapsed_sec,
-                            'event_type': 'check-in',
-                        }
-                    }
-                    broadcast_recognition_results([], duplicate_payload)
-                    log_event_entry(
-                        event_type='duplicate_punch',
-                        message=f"Duplicate punch for {name}",
-                        metadata=duplicate_payload.get('data', {})
-                    )
+                        logging.warning(f"Duplicate punch broadcast error: {e}")
             
             # Update timestamps
-            last_recognition_time = current_time
-            last_face_detection_time = current_time
+            last_recognition_time = now_ts
+            last_face_detection_time = now_ts
             
             # Show recognition results
             if results:
@@ -926,20 +1015,50 @@ def recognition_worker():
                 time.sleep(0.3)  # Longer sleep when no recognition
                 
         except Exception as e:
-            print(f"❌ Error in recognition worker: {e}")
+            logging.exception("Error in recognition worker")
             time.sleep(1)
+    logging.warning("Recognition worker exited")
 
 def start_recognition_pipeline():
     """Start the optimized recognition pipeline"""
     global recognition_active, recognition_thread
     
+    if recognition_thread is not None and not recognition_thread.is_alive():
+        recognition_active = False
+        recognition_thread = None
+
     if not recognition_active:
         recognition_active = True
         recognition_thread = threading.Thread(target=recognition_worker, daemon=True)
         recognition_thread.start()
+        start_recognition_watchdog()
         print("🔍 Optimized recognition pipeline started")
         return True
     return False
+
+
+def start_recognition_watchdog():
+    """Restart recognition loop if it stalls"""
+    global recognition_watchdog_thread, recognition_watchdog_active
+    if recognition_watchdog_thread is not None and recognition_watchdog_thread.is_alive():
+        return
+    recognition_watchdog_active = True
+
+    def _watchdog():
+        global recognition_active, recognition_thread, last_recognition_heartbeat
+        while recognition_watchdog_active:
+            time.sleep(2.0)
+            if not camera_active or not recognition_active:
+                continue
+            now = time.time()
+            if last_recognition_heartbeat and (now - last_recognition_heartbeat) > 4.0:
+                logging.warning("Recognition loop stalled; restarting pipeline.")
+                recognition_active = False
+                recognition_thread = None
+                start_recognition_pipeline()
+
+    recognition_watchdog_thread = threading.Thread(target=_watchdog, daemon=True)
+    recognition_watchdog_thread.start()
 
 def stop_recognition_pipeline():
     """Stop the optimized recognition pipeline"""
@@ -958,17 +1077,17 @@ def broadcast_recognition_results(faces_payload, recognized_payload=None):
     with event_source_lock:
         if event_source_clients:
             now_ts = datetime.now().isoformat()
-            face_event = {
-                'type': 'face_detected',
-                'timestamp': now_ts,
-                'faces': faces_payload,
-                'data': {'faces_detected': len(faces_payload)}
-            }
-
             # Send to all connected clients
             for client in event_source_clients.copy():
                 try:
-                    client.put(f"data: {json.dumps(_json_safe(face_event))}\n\n")
+                    if faces_payload is not None:
+                        face_event = {
+                            'type': 'face_detected',
+                            'timestamp': now_ts,
+                            'faces': faces_payload,
+                            'data': {'faces_detected': len(faces_payload)}
+                        }
+                        client.put(f"data: {json.dumps(_json_safe(face_event))}\n\n")
                     if recognized_payload:
                         client.put(f"data: {json.dumps(_json_safe(recognized_payload))}\n\n")
                 except:
@@ -1119,7 +1238,6 @@ def load_known_faces():
                 print(f"❌ Error loading face {name}: {e}")
     
     print(f"📊 Loaded {len(known_face_names)} face encodings from {len(set(known_face_names))} employees")
-    
     # Initialize or update face detector with known faces
     global face_detector
     if face_detector is None:
@@ -1890,7 +2008,12 @@ def delete_employee(employee_id):
         # Check if employee exists
         employee = db.get_employee(employee_id)
         if not employee:
-            return jsonify({'error': 'Employee not found'}), 404
+            # Idempotent delete: return success if already removed
+            return jsonify({
+                'success': True,
+                'message': f'Employee {employee_id} already deleted',
+                'face_data_deleted': delete_face_data
+            })
         
         # Delete face data if requested
         if delete_face_data:
@@ -2153,6 +2276,24 @@ def get_erpnext_employees():
 @app.route('/api/camera/stream', methods=['GET'])
 def camera_stream():
     """Stream camera feed with integrated face recognition as MJPEG"""
+    stream_width = _parse_stream_arg(
+        request.args.get('w'),
+        STREAM_WIDTH,
+        STREAM_MIN_WIDTH,
+        STREAM_MAX_WIDTH
+    )
+    stream_height = _parse_stream_arg(
+        request.args.get('h'),
+        STREAM_HEIGHT,
+        STREAM_MIN_HEIGHT,
+        STREAM_MAX_HEIGHT
+    )
+    stream_quality = _parse_stream_arg(
+        request.args.get('q'),
+        STREAM_JPEG_QUALITY,
+        STREAM_MIN_QUALITY,
+        STREAM_MAX_QUALITY
+    )
     try:
         if not camera_active:
             if ensure_camera_ready(force=True):
@@ -2162,7 +2303,11 @@ def camera_stream():
     except Exception as e:
         logging.warning(f"Camera auto-start on stream failed: {e}")
     return Response(
-        generate_optimized_video_stream(),
+        generate_optimized_video_stream(
+            width=stream_width,
+            height=stream_height,
+            quality=stream_quality
+        ),
         mimetype='multipart/x-mixed-replace; boundary=frame'
     )
 
@@ -2182,7 +2327,27 @@ def camera_snapshot():
                 frame = get_camera_frame()
         if frame is None:
             return jsonify({'error': 'Camera frame not available'}), 503
-        ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        snap_width = _parse_stream_arg(
+            request.args.get('w'),
+            Config.CAMERA_WIDTH,
+            STREAM_MIN_WIDTH,
+            STREAM_MAX_WIDTH
+        )
+        snap_height = _parse_stream_arg(
+            request.args.get('h'),
+            Config.CAMERA_HEIGHT,
+            STREAM_MIN_HEIGHT,
+            STREAM_MAX_HEIGHT
+        )
+        snap_quality = _parse_stream_arg(
+            request.args.get('q'),
+            85,
+            STREAM_MIN_QUALITY,
+            STREAM_MAX_QUALITY
+        )
+        if frame.shape[1] != snap_width or frame.shape[0] != snap_height:
+            frame = cv2.resize(frame, (snap_width, snap_height))
+        ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, snap_quality])
         if not ret:
             return jsonify({'error': 'Failed to encode frame'}), 500
         return Response(
@@ -2317,17 +2482,27 @@ def recognition_status():
     """Get recognition status"""
     with event_source_lock:
         client_count = len(event_source_clients)
+    if camera_active:
+        start_recognition_pipeline()
     
     return jsonify({
         'camera_active': camera_active,
         'loaded_faces': len(known_face_names),
         'last_results': recognition_results,
-        'event_source_clients': client_count
+        'event_source_clients': client_count,
+        'recognition_active': recognition_active,
+        'last_heartbeat_age_sec': round(time.time() - last_recognition_heartbeat, 2) if last_recognition_heartbeat else None,
+        'last_recognition_time_sec': round(time.time() - last_recognition_time, 2) if last_recognition_time else None,
+        'last_detection_count': last_detection_count,
+        'last_frame_none_count': last_frame_none_count,
+        'last_frame_source': last_frame_source
     })
 
 @app.route('/api/recognition/stream', methods=['GET'])
 def recognition_stream():
     """Enhanced EventSource stream with better error handling"""
+    if camera_active:
+        start_recognition_pipeline()
     return Response(
         generate_recognition_stream(),
         mimetype='text/event-stream',
@@ -2507,8 +2682,16 @@ def get_profile_photo(filename):
             return jsonify({'error': 'Invalid file type'}), 400
         
         profile_path = os.path.join(profile_dir, filename)
+        cache_key = profile_path
+        cached = _get_profile_photo_cache(cache_key)
+        if cached:
+            return Response(cached['data'], mimetype=cached['mime'])
         if os.path.exists(profile_path):
-            return send_from_directory(profile_dir, filename)
+            with open(profile_path, 'rb') as f:
+                data = f.read()
+            mime = 'image/png' if filename.lower().endswith('.png') else 'image/jpeg'
+            _set_profile_photo_cache(cache_key, data, mime)
+            return Response(data, mimetype=mime)
 
         # Fallback to faces directory if profiles are missing
         faces_dir = Config.FACES_DIRECTORY
@@ -2523,7 +2706,15 @@ def get_profile_photo(filename):
 
         for candidate in candidates:
             if os.path.exists(candidate):
-                return send_file(candidate)
+                cache_key = candidate
+                cached = _get_profile_photo_cache(cache_key)
+                if cached:
+                    return Response(cached['data'], mimetype=cached['mime'])
+                with open(candidate, 'rb') as f:
+                    data = f.read()
+                mime = 'image/png' if candidate.lower().endswith('.png') else 'image/jpeg'
+                _set_profile_photo_cache(cache_key, data, mime)
+                return Response(data, mimetype=mime)
 
         return jsonify({'error': 'Profile photo not found'}), 404
             
@@ -3141,4 +3332,4 @@ if __name__ == '__main__':
         cleanup_camera()
     except Exception as e:
         print(f"Server error: {e}")
-        cleanup_camera() 
+        cleanup_camera()

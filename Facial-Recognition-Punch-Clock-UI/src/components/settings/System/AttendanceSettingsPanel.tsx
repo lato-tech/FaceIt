@@ -24,6 +24,7 @@ const AttendanceSettingsPanel: React.FC<Props> = ({ settings, setSettings }) => 
             ...settings,
             duplicatePunchIntervalSec: Math.max(0, Number(e.target.value)),
           })}
+          helperText="Within this window, additional punches are ignored"
           fullWidth
         />
       </Box>
