@@ -1,7 +1,6 @@
 import React from 'react';
-import { Paper, Typography, Box, Autocomplete, TextField, CircularProgress } from '@mui/material';
+import { Paper, Typography, Box, Autocomplete, TextField, CircularProgress, Tooltip } from '@mui/material';
 import { getWeatherDescription } from '../../../utils/weatherDescription';
-
 
 type Props = {
   inputValue: string;
@@ -30,16 +29,20 @@ const WeatherPanel: React.FC<Props> = ({
         🌤️ Weather & Location
       </Typography>
 
-      <Autocomplete
-        freeSolo
-        options={options}
-        getOptionLabel={(option) => `${option.name}, ${option.country}`}
-        onInputChange={handleInputChange}
-        onChange={handleCitySelect}
-        inputValue={inputValue}
-        renderInput={(params) => <TextField {...params} label="Search city" fullWidth />}
-        sx={{ mb: 2 }}
-      />
+      <Tooltip title="City for weather display on the punch clock. Uses Open-Meteo for live weather." placement="top" arrow enterDelay={400}>
+        <Box sx={{ cursor: 'help' }}>
+          <Autocomplete
+            freeSolo
+            options={options}
+            getOptionLabel={(option) => `${option.name}, ${option.country}`}
+            onInputChange={handleInputChange}
+            onChange={handleCitySelect}
+            inputValue={inputValue}
+            renderInput={(params) => <TextField {...params} label="Search city" variant="outlined" fullWidth />}
+            sx={{ mb: 2 }}
+          />
+        </Box>
+      </Tooltip>
 
       {loading ? (
         <CircularProgress />

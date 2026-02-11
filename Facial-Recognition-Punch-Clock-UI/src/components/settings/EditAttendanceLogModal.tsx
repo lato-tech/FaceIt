@@ -9,6 +9,7 @@ import {
   MenuItem,
   Button,
   Stack,
+  Tooltip,
 } from '@mui/material';
 import { XIcon } from 'lucide-react';
 import { AttendanceLog } from '../../utils/types';
@@ -70,32 +71,43 @@ const EditAttendanceLogModal = ({
 
         <form onSubmit={handleSubmit}>
           <Stack spacing={2}>
-            <TextField
-              label="Employee Name"
-              value={formData.employeeName}
-              onChange={(e) =>
-                setFormData({
-                  ...formData,
-                  employeeName: e.target.value,
-                })
-              }
-              fullWidth
-            />
-
-            <TextField
-              label="Employee Code"
-              value={formData.employeeId}
-              onChange={(e) =>
-                setFormData({
-                  ...formData,
-                  employeeId: e.target.value,
-                })
-              }
-              fullWidth
-            />
-
+            <Tooltip title="Name of the employee for this attendance log." placement="top" arrow enterDelay={400}>
+              <Box sx={{ cursor: 'help' }}>
+                <TextField
+                  label="Employee Name"
+                  variant="outlined"
+                  value={formData.employeeName}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      employeeName: e.target.value,
+                    })
+                  }
+                  fullWidth
+                />
+              </Box>
+            </Tooltip>
+            <Tooltip title="Employee ID or code." placement="top" arrow enterDelay={400}>
+              <Box sx={{ cursor: 'help' }}>
+                <TextField
+                  label="Employee Code"
+                  variant="outlined"
+                  value={formData.employeeId}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      employeeId: e.target.value,
+                    })
+                  }
+                  fullWidth
+                />
+              </Box>
+            </Tooltip>
+            <Tooltip title="Type of attendance event: Check In, Check Out, or Registration." placement="top" arrow enterDelay={400}>
+              <Box sx={{ cursor: 'help' }}>
             <Select
               fullWidth
+              variant="outlined"
               value={formData.type}
               onChange={(e) =>
                 setFormData({
@@ -108,9 +120,13 @@ const EditAttendanceLogModal = ({
               <MenuItem value="check-out">Check Out</MenuItem>
               <MenuItem value="register">Registration</MenuItem>
             </Select>
-
-            <TextField
+              </Box>
+            </Tooltip>
+            <Tooltip title="Date and time of the attendance event." placement="top" arrow enterDelay={400}>
+              <Box sx={{ cursor: 'help' }}>
+                <TextField
               label="Timestamp"
+              variant="outlined"
               type="datetime-local"
               value={formData.timestamp.replace(' ', 'T').slice(0, 16)}
               onChange={(e) =>
@@ -124,9 +140,13 @@ const EditAttendanceLogModal = ({
               }}
               fullWidth
             />
-
-            <TextField
+              </Box>
+            </Tooltip>
+            <Tooltip title="Reason for modifying this attendance log. Required when editing." placement="top" arrow enterDelay={400}>
+              <Box sx={{ cursor: 'help' }}>
+                <TextField
               label="Modification Reason"
+              variant="outlined"
               multiline
               rows={3}
               value={formData.modified?.reason || ''}
@@ -142,6 +162,8 @@ const EditAttendanceLogModal = ({
               required
               fullWidth
             />
+              </Box>
+            </Tooltip>
 
             <Box display="flex" justifyContent="flex-end" gap={2} mt={2}>
               <Button variant="outlined" onClick={onClose}>

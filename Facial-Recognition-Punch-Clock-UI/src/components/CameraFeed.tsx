@@ -124,6 +124,13 @@ const VideoStream: React.FC<{
     return () => clearInterval(watchdog);
   }, [isActive, lastFrameAt]);
 
+  // Refresh stream when camera settings are saved (Resolution, Stream Resolution, Quality, FPS)
+  useEffect(() => {
+    const handler = () => setStreamNonce((prev) => prev + 1);
+    window.addEventListener('cameraSettingsSaved', handler);
+    return () => window.removeEventListener('cameraSettingsSaved', handler);
+  }, []);
+
   if (!isActive) {
     return (
       <Box
@@ -303,7 +310,9 @@ const useCameraControls = () => {
         headers: { 'Content-Type': 'application/json' }
       });
 
-      if (response.ok) {
+      const data = await response.json().catch(() => ({}));
+      const alreadyActive = response.ok && data.message === 'Camera is already active';
+      if (response.ok && (data.success !== false || alreadyActive)) {
         setCameraStatus('active');
         setSystemStatus(prev => ({
           ...prev,
@@ -312,14 +321,16 @@ const useCameraControls = () => {
           errors: []
         }));
       } else {
-        throw new Error('Failed to start camera');
+        const msg = data.error || data.message || 'Failed to start camera';
+        throw new Error(typeof msg === 'string' ? msg : 'Failed to start camera');
       }
     } catch (error) {
       console.error('Start camera error:', error);
       setCameraStatus('inactive'); // Reset to inactive so user can try again
+      const errMsg = error instanceof Error ? error.message : 'Unknown error';
       setSystemStatus(prev => ({
         ...prev,
-        errors: [...prev.errors, error instanceof Error ? error.message : 'Unknown error']
+        errors: [...prev.errors, errMsg]
       }));
     }
   }, [checkHealth]);
@@ -516,17 +527,16 @@ const CameraFeed: React.FC = () => {
   const { events, connectionStatus } = useRecognitionStream(cameraStatus === 'active');
 
   // Auto-start camera when component mounts (only if health check passes)
+  // startCamera() also syncs status when backend reports "Camera is already active" (e.g. after page refresh)
   useEffect(() => {
     const autoStart = async () => {
-      if (cameraStatus === 'inactive') {
-        try {
-          const isHealthy = await fetch(`${API_BASE}/health`).then(r => r.ok).catch(() => false);
-          if (isHealthy) {
-            startCamera();
-          }
-        } catch (error) {
-          console.error('Auto-start failed:', error);
+      try {
+        const isHealthy = await fetch(`${API_BASE}/health`).then(r => r.ok).catch(() => false);
+        if (isHealthy) {
+          startCamera();
         }
+      } catch (error) {
+        console.error('Auto-start failed:', error);
       }
     };
     autoStart();
@@ -793,7 +803,7 @@ const CameraFeed: React.FC = () => {
     }
   }, [events, connectionStatus, cameraStatus, mapRecognitionsToFaces]);
 
-  // Draw face detection overlay
+  // Draw face detection overlay (disabled - no boxes on stream)
   const drawFaceOverlay = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -801,66 +811,13 @@ const CameraFeed: React.FC = () => {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Set canvas size to match video
     const img = imgRef.current;
     if (!img) return;
 
     canvas.width = img.clientWidth;
     canvas.height = img.clientHeight;
-
-    // Clear canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    if (currentFaces.length === 0) {
-      return;
-    }
-
-    // Box coordinates are in stream reference space (streamRefSize); scale to canvas
-    const refW = streamRefSize.width || 640;
-    const refH = streamRefSize.height || 360;
-    currentFaces.forEach(face => {
-      const x = (face.x / refW) * canvas.width;
-      const y = (face.y / refH) * canvas.height;
-      const width = (face.width / refW) * canvas.width;
-      const height = (face.height / refH) * canvas.height;
-
-      // Draw bounding box
-      ctx.strokeStyle = face.recognized ? '#4CAF50' : '#FF9800';
-      ctx.lineWidth = 2;
-      ctx.strokeRect(x, y, width, height);
-
-      // Draw label
-      ctx.fillStyle = face.recognized ? '#4CAF50' : '#FF9800';
-      ctx.fillRect(x, y - 20, width, 20);
-      
-      ctx.fillStyle = 'white';
-      ctx.font = '12px Arial';
-      const label = face.recognized ? face.name || 'Recognized' : 'Unknown';
-      ctx.fillText(label, x + 5, y - 5);
-
-      // Draw confidence
-      ctx.fillStyle = 'rgba(0,0,0,0.7)';
-      ctx.fillRect(x, y + height, width, 48);
-      ctx.fillStyle = 'white';
-      ctx.fillText(
-        `${Math.round((face.confidence || 0) * 100)}%`,
-        x + 5,
-        y + height + 12
-      );
-
-      const ageText = face.age ? `Age: ${face.age}` : 'Age: N/A';
-      const emotionText = face.emotion ? `Emotion: ${face.emotion}` : 'Emotion: N/A';
-      ctx.fillText(ageText, x + 5, y + height + 24);
-      ctx.fillText(emotionText, x + 5, y + height + 36);
-
-      if (face.spoof) {
-        ctx.fillStyle = 'rgba(255,0,0,0.85)';
-        ctx.fillRect(x, y - 20, 70, 18);
-        ctx.fillStyle = 'white';
-        ctx.fillText('SPOOF?', x + 5, y - 6);
-      }
-    });
-  }, [currentFaces, streamRefSize]);
+  }, []);
 
   // Continuous drawing for video stream
   useEffect(() => {

@@ -11,6 +11,7 @@ import {
   Alert,
   Chip,
   Divider,
+  Tooltip,
 } from '@mui/material';
 import { Save as SaveIcon, RefreshCw as RefreshCwIcon } from 'lucide-react';
 
@@ -242,44 +243,63 @@ const CameraSettings: React.FC = () => {
             ONVIF Configuration
           </Typography>
 
-          <TextField
-            label="ONVIF Service Port"
-            type="number"
-            value={onvifConfig.ServicePort || 8081}
-            onChange={(e) => setOnvifConfig({ ...onvifConfig, ServicePort: e.target.value })}
-            fullWidth
-            helperText="Port for ONVIF device service (default: 8081)"
-          />
-
-          <TextField
-            label="RTSP Port"
-            type="number"
-            value={onvifConfig.RTSPPort || 8554}
-            onChange={(e) => setOnvifConfig({ ...onvifConfig, RTSPPort: e.target.value })}
-            fullWidth
-            helperText="Port for RTSP streaming (default: 8554)"
-          />
-
-          <TextField
-            label="Username"
-            value={onvifConfig.Username || 'admin'}
-            onChange={(e) => setOnvifConfig({ ...onvifConfig, Username: e.target.value })}
-            fullWidth
-          />
-
-          <TextField
-            label="Password"
-            type="password"
-            value={onvifConfig.Password || ''}
-            onChange={(e) => setOnvifConfig({ ...onvifConfig, Password: e.target.value })}
-            fullWidth
-          />
-
+          <Tooltip title="Port for ONVIF device service. Default: 8081" placement="top" arrow enterDelay={400}>
+            <Box sx={{ cursor: 'help' }}>
+              <TextField
+                label="ONVIF Service Port"
+                variant="outlined"
+                type="number"
+                value={onvifConfig.ServicePort || 8081}
+                onChange={(e) => setOnvifConfig({ ...onvifConfig, ServicePort: e.target.value })}
+                fullWidth
+                helperText="Port for ONVIF device service (default: 8081)"
+              />
+            </Box>
+          </Tooltip>
+          <Tooltip title="Port for RTSP streaming. Default: 8554" placement="top" arrow enterDelay={400}>
+            <Box sx={{ cursor: 'help' }}>
+              <TextField
+                label="RTSP Port"
+                variant="outlined"
+                type="number"
+                value={onvifConfig.RTSPPort || 8554}
+                onChange={(e) => setOnvifConfig({ ...onvifConfig, RTSPPort: e.target.value })}
+                fullWidth
+                helperText="Port for RTSP streaming (default: 8554)"
+              />
+            </Box>
+          </Tooltip>
+          <Tooltip title="ONVIF authentication username. Default: admin" placement="top" arrow enterDelay={400}>
+            <Box sx={{ cursor: 'help' }}>
+              <TextField
+                label="Username"
+                variant="outlined"
+                value={onvifConfig.Username || 'admin'}
+                onChange={(e) => setOnvifConfig({ ...onvifConfig, Username: e.target.value })}
+                fullWidth
+              />
+            </Box>
+          </Tooltip>
+          <Tooltip title="ONVIF authentication password." placement="top" arrow enterDelay={400}>
+            <Box sx={{ cursor: 'help' }}>
+              <TextField
+                label="Password"
+                variant="outlined"
+                type="password"
+                value={onvifConfig.Password || ''}
+                onChange={(e) => setOnvifConfig({ ...onvifConfig, Password: e.target.value })}
+                fullWidth
+              />
+            </Box>
+          </Tooltip>
           {onvifConfig.DeviceInformation && (
             <>
-              <TextField
-                label="Manufacturer"
-                value={onvifConfig.DeviceInformation.Manufacturer || 'Raspberry Pi'}
+              <Tooltip title="Device manufacturer name shown in ONVIF. Default: Raspberry Pi" placement="top" arrow enterDelay={400}>
+                <Box sx={{ cursor: 'help' }}>
+                  <TextField
+                    label="Manufacturer"
+                    variant="outlined"
+                    value={onvifConfig.DeviceInformation.Manufacturer || 'Raspberry Pi'}
                 onChange={(e) => setOnvifConfig({
                   ...onvifConfig,
                   DeviceInformation: {
@@ -289,10 +309,14 @@ const CameraSettings: React.FC = () => {
                 })}
                 fullWidth
               />
-
-              <TextField
-                label="Model"
-                value={onvifConfig.DeviceInformation.Model || 'RPi5 Facial Recognition System'}
+                </Box>
+              </Tooltip>
+              <Tooltip title="Device model name shown in ONVIF. Default: RPi5 Facial Recognition System" placement="top" arrow enterDelay={400}>
+                <Box sx={{ cursor: 'help' }}>
+                  <TextField
+                    label="Model"
+                    variant="outlined"
+                    value={onvifConfig.DeviceInformation.Model || 'RPi5 Facial Recognition System'}
                 onChange={(e) => setOnvifConfig({
                   ...onvifConfig,
                   DeviceInformation: {
@@ -302,6 +326,8 @@ const CameraSettings: React.FC = () => {
                 })}
                 fullWidth
               />
+                </Box>
+              </Tooltip>
             </>
           )}
 

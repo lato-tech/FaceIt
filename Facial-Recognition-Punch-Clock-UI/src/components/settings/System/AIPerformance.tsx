@@ -1,6 +1,6 @@
 import React from 'react';
-import { Paper, Typography, FormControl, InputLabel, Select, MenuItem, Slider } from '@mui/material';
-import { Zap as ZapIcon } from 'lucide-react';
+import { Paper, Typography, FormControl, InputLabel, Select, MenuItem, Slider, Tooltip, Box } from '@mui/material';
+import { Zap as ZapIcon, HelpCircle } from 'lucide-react';
 
 type Props = {
   aiPerformance: {
@@ -18,45 +18,56 @@ const AIPerformancePanel: React.FC<Props> = ({ aiPerformance, setSettings }) => 
         <ZapIcon size={20} style={{ marginRight: 6 }} /> AI Performance
       </Typography>
 
-      <FormControl fullWidth sx={{ mb: 2 }}>
-        <InputLabel>Model Optimization</InputLabel>
-        <Select
-          value={aiPerformance.modelOptimization}
-          label="Model Optimization"
-          onChange={(e) =>
-            setSettings((prev: any) => ({
-              ...prev,
-              aiPerformance: { ...prev.aiPerformance, modelOptimization: e.target.value },
-            }))
-          }
-        >
-          <MenuItem value="speed">Speed Priority</MenuItem>
-          <MenuItem value="balanced">Balanced</MenuItem>
-          <MenuItem value="accuracy">Accuracy Priority</MenuItem>
-        </Select>
-      </FormControl>
+      <Tooltip title="Speed = faster, less accurate. Accuracy = slower, better matches. Balanced = middle ground. Default: Balanced" placement="top" arrow enterDelay={400}>
+        <Box sx={{ cursor: 'help' }}>
+        <FormControl fullWidth variant="outlined" sx={{ mb: 2 }}>
+          <InputLabel>Model Optimization</InputLabel>
+          <Select
+            value={aiPerformance.modelOptimization}
+            label="Model Optimization"
+            onChange={(e) =>
+              setSettings((prev: any) => ({
+                ...prev,
+                aiPerformance: { ...prev.aiPerformance, modelOptimization: e.target.value },
+              }))
+            }
+          >
+            <MenuItem value="speed">Speed Priority</MenuItem>
+            <MenuItem value="balanced">Balanced</MenuItem>
+            <MenuItem value="accuracy">Accuracy Priority</MenuItem>
+          </Select>
+        </FormControl>
+        </Box>
+      </Tooltip>
 
-      <FormControl fullWidth sx={{ mb: 2 }}>
-        <InputLabel>Processing Unit</InputLabel>
-        <Select
-          value={aiPerformance.processingUnit}
-          label="Processing Unit"
-          onChange={(e) =>
-            setSettings((prev: any) => ({
-              ...prev,
-              aiPerformance: { ...prev.aiPerformance, processingUnit: e.target.value },
-            }))
-          }
-        >
-          <MenuItem value="auto">Auto-detect</MenuItem>
-          <MenuItem value="cpu">CPU Only</MenuItem>
-          <MenuItem value="gpu">GPU Priority</MenuItem>
-        </Select>
-      </FormControl>
+      <Tooltip title="Which hardware to use for face recognition. Auto = system picks best. Default: Auto" placement="top" arrow enterDelay={400}>
+        <Box sx={{ cursor: 'help' }}>
+        <FormControl fullWidth variant="outlined" sx={{ mb: 2 }}>
+          <InputLabel>Processing Unit</InputLabel>
+          <Select
+            value={aiPerformance.processingUnit}
+            label="Processing Unit"
+            onChange={(e) =>
+              setSettings((prev: any) => ({
+                ...prev,
+                aiPerformance: { ...prev.aiPerformance, processingUnit: e.target.value },
+              }))
+            }
+          >
+            <MenuItem value="auto">Auto-detect</MenuItem>
+            <MenuItem value="cpu">CPU Only</MenuItem>
+            <MenuItem value="gpu">GPU Priority</MenuItem>
+          </Select>
+        </FormControl>
+        </Box>
+      </Tooltip>
 
-      <Typography gutterBottom>
-        Confidence Threshold ({(aiPerformance.confidenceThreshold * 100).toFixed(0)}%)
-      </Typography>
+      <Tooltip title="Minimum confidence to accept a match. Higher = stricter, fewer false positives. Default: 85%" placement="top" arrow enterDelay={400}>
+        <Box sx={{ cursor: 'help' }}>
+        <Typography gutterBottom display="flex" alignItems="center" gap={0.5}>
+          Confidence Threshold ({(aiPerformance.confidenceThreshold * 100).toFixed(0)}%)
+          <HelpCircle size={14} style={{ opacity: 0.6, cursor: 'help' }} />
+        </Typography>
       <Slider
         min={0}
         max={1}
@@ -69,6 +80,8 @@ const AIPerformancePanel: React.FC<Props> = ({ aiPerformance, setSettings }) => 
           }))
         }
       />
+        </Box>
+      </Tooltip>
     </Paper>
   );
 };

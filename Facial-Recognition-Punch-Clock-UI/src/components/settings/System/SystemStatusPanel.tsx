@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Paper, Typography, Box, CircularProgress, Button, FormControl, Select, MenuItem } from '@mui/material';
+import { Paper, Typography, Box, CircularProgress, Button, FormControl, Select, MenuItem, Tooltip } from '@mui/material';
 import { Cpu as CpuIcon, FileText as FileTextIcon } from 'lucide-react';
 import SystemStatsLogModal from './SystemStatsLogModal';
 
@@ -50,44 +50,14 @@ const SystemStatusPanel: React.FC<Props> = ({ logIntervalSec, onLogIntervalChang
   }
 
   const statsData = [
-    { 
-      label: 'CPU Usage', 
-      value: stats?.cpu_usage ? `${stats.cpu_usage}%` : 'N/A' 
-    },
-    { 
-      label: 'Temperature', 
-      value: stats?.temperature ? `${stats.temperature}°C` : 'N/A' 
-    },
-    { 
-      label: 'GPU', 
-      value: typeof stats?.gpu_clock_mhz === 'number'
-        ? `${stats.gpu_clock_mhz} MHz${typeof stats?.gpu_mem_mb === 'number' ? ` (${stats.gpu_mem_mb} MB)` : ''}${typeof stats?.gpu_busy_percent === 'number' ? ` • ${stats.gpu_busy_percent}%` : ''}`
-        : 'N/A'
-    },
-    { 
-      label: 'RAM Usage', 
-      value: (typeof stats?.ram_usage_percent === 'number' && typeof stats?.ram_used_gb === 'number')
-        ? `${stats.ram_usage_percent}% (${stats.ram_used_gb} GB)`
-        : 'N/A' 
-    },
-    { 
-      label: 'Storage', 
-      value: stats?.storage_free_gb ? `${stats.storage_free_gb} GB free` : 'N/A' 
-    },
-    { 
-      label: 'Cores / Threads', 
-      value: (typeof stats?.cpu_cores === 'number' && typeof stats?.cpu_threads === 'number')
-        ? `${stats.cpu_cores}/${stats.cpu_threads}`
-        : 'N/A'
-    },
-    { 
-      label: 'Employees', 
-      value: typeof stats?.employees_count === 'number' ? `${stats.employees_count}/100000` : 'N/A' 
-    },
-    { 
-      label: 'Logs', 
-      value: typeof stats?.logs_count === 'number' ? `${stats.logs_count}/1000000` : 'N/A' 
-    },
+    { label: 'CPU Usage', value: stats?.cpu_usage ? `${stats.cpu_usage}%` : 'N/A', tooltip: 'Current CPU utilization' },
+    { label: 'Temperature', value: stats?.temperature ? `${stats.temperature}°C` : 'N/A', tooltip: 'Device temperature (RPi shows SoC temp)' },
+    { label: 'GPU', value: typeof stats?.gpu_clock_mhz === 'number' ? `${stats.gpu_clock_mhz} MHz${typeof stats?.gpu_mem_mb === 'number' ? ` (${stats.gpu_mem_mb} MB)` : ''}${typeof stats?.gpu_busy_percent === 'number' ? ` • ${stats.gpu_busy_percent}%` : ''}` : 'N/A', tooltip: 'GPU clock, memory, and utilization' },
+    { label: 'RAM Usage', value: (typeof stats?.ram_usage_percent === 'number' && typeof stats?.ram_used_gb === 'number') ? `${stats.ram_usage_percent}% (${stats.ram_used_gb} GB)` : 'N/A', tooltip: 'RAM used vs total' },
+    { label: 'Storage', value: stats?.storage_free_gb ? `${stats.storage_free_gb} GB free` : 'N/A', tooltip: 'Free disk space' },
+    { label: 'Cores / Threads', value: (typeof stats?.cpu_cores === 'number' && typeof stats?.cpu_threads === 'number') ? `${stats.cpu_cores}/${stats.cpu_threads}` : 'N/A', tooltip: 'CPU physical cores / logical threads' },
+    { label: 'Employees', value: typeof stats?.employees_count === 'number' ? `${stats.employees_count}/100000` : 'N/A', tooltip: 'Registered employees / max capacity' },
+    { label: 'Logs', value: typeof stats?.logs_count === 'number' ? `${stats.logs_count}/1000000` : 'N/A', tooltip: 'Attendance logs stored / max' },
   ];
 
   return (
@@ -98,19 +68,21 @@ const SystemStatusPanel: React.FC<Props> = ({ logIntervalSec, onLogIntervalChang
           System Status
         </Typography>
         <Box display="flex" gap={1} alignItems="center">
-          <FormControl size="small" sx={{ minWidth: 110 }}>
-            <Select
-              value={logIntervalSec}
-              onChange={(e) => {
-                const next = Number(e.target.value);
-                onLogIntervalChange(next);
-              }}
-            >
-              {[1, 5, 10, 30, 60, 90, 120, 600].map((sec) => (
-                <MenuItem key={sec} value={sec}>{sec}s</MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+          <Tooltip title="How often system stats (CPU, RAM, etc.) are logged to the stats file." placement="top" arrow enterDelay={400}>
+            <FormControl size="small" sx={{ minWidth: 110 }}>
+              <Select
+                value={logIntervalSec}
+                onChange={(e) => {
+                  const next = Number(e.target.value);
+                  onLogIntervalChange(next);
+                }}
+              >
+                {[1, 5, 10, 30, 60, 90, 120, 600].map((sec) => (
+                  <MenuItem key={sec} value={sec}>{sec}s</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Tooltip>
           <Button
             variant="outlined"
             size="small"
@@ -122,10 +94,12 @@ const SystemStatusPanel: React.FC<Props> = ({ logIntervalSec, onLogIntervalChang
         </Box>
       </Box>
       {statsData.map((item, i) => (
-        <Box key={i} display="flex" justifyContent="space-between" py={1.5} px={1}>
-          <Typography variant="body1" fontWeight="bold">{item.label}</Typography>
-          <Typography variant="body1">{item.value}</Typography>
-        </Box>
+        <Tooltip key={i} title={item.tooltip} placement="top" arrow enterDelay={400}>
+          <Box display="flex" justifyContent="space-between" py={1.5} px={1} sx={{ cursor: 'help' }}>
+            <Typography variant="body1" fontWeight="bold">{item.label}</Typography>
+            <Typography variant="body1">{item.value}</Typography>
+          </Box>
+        </Tooltip>
       ))}
       <SystemStatsLogModal
         isOpen={logsOpen}

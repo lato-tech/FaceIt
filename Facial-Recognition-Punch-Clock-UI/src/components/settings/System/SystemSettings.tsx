@@ -37,7 +37,11 @@ const SystemSettings = () => {
   const { setLanguage } = useLanguage();
   const [settings, setSettings] = useState({
     faceDetectionThreshold: 0.85,
+    recognitionDistance: 0.5,
     cameraResolution: '1080p',
+    streamResolution: '720p',
+    streamQuality: 90,
+    streamFps: 30,
     colorTone: 'natural',
     enhancedLighting: true,
     aiFeatures: {
@@ -165,7 +169,11 @@ const SystemSettings = () => {
         setSettings((prev) => ({
           ...prev,
           faceDetectionThreshold: data.faceDetectionThreshold ?? prev.faceDetectionThreshold,
+          recognitionDistance: data.recognitionDistance ?? prev.recognitionDistance,
           cameraResolution: data.cameraResolution ?? prev.cameraResolution,
+          streamResolution: data.streamResolution ?? prev.streamResolution,
+          streamQuality: data.streamQuality ?? prev.streamQuality,
+          streamFps: data.streamFps ?? prev.streamFps,
           colorTone: data.colorTone ?? prev.colorTone,
           enhancedLighting: data.enhancedLighting ?? prev.enhancedLighting,
         }));
@@ -379,7 +387,11 @@ const SystemSettings = () => {
       // Save camera settings
       const cameraSettings = {
         faceDetectionThreshold: settings.faceDetectionThreshold,
+        recognitionDistance: settings.recognitionDistance,
         cameraResolution: settings.cameraResolution,
+        streamResolution: settings.streamResolution ?? '720p',
+        streamQuality: settings.streamQuality ?? 90,
+        streamFps: settings.streamFps ?? 30,
         colorTone: settings.colorTone,
         enhancedLighting: settings.enhancedLighting,
       };
@@ -391,6 +403,10 @@ const SystemSettings = () => {
         },
         body: JSON.stringify(cameraSettings),
       });
+
+      if (response.ok) {
+        window.dispatchEvent(new CustomEvent('cameraSettingsSaved'));
+      }
 
       const aiSettings = {
         aiFeatures: settings.aiFeatures,

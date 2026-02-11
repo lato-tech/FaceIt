@@ -14,6 +14,7 @@ import {
   TableRow,
   TableContainer,
   CircularProgress,
+  Tooltip,
 } from '@mui/material';
 
 const API_BASE = import.meta.env.VITE_API_BASE || (window.location.protocol + '//' + window.location.hostname + ':5002/api');
@@ -132,14 +133,22 @@ const SystemLogs: React.FC = () => {
         {tab === 0 && (
           <>
             <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mb: 2 }}>
+              <Tooltip title="Search events by text." placement="top" arrow enterDelay={400}>
+                <Box sx={{ cursor: 'help' }}>
               <TextField
                 label="Search"
+                variant="outlined"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 size="small"
               />
+                </Box>
+              </Tooltip>
+              <Tooltip title="Filter events by category." placement="top" arrow enterDelay={400}>
+                <Box sx={{ cursor: 'help' }}>
               <TextField
                 label="Category"
+                variant="outlined"
                 select
                 size="small"
                 value={category}
@@ -150,22 +159,34 @@ const SystemLogs: React.FC = () => {
                   <MenuItem key={cat} value={cat}>{cat}</MenuItem>
                 ))}
               </TextField>
+                </Box>
+              </Tooltip>
+              <Tooltip title="Start date/time for event filter." placement="top" arrow enterDelay={400}>
+                <Box sx={{ cursor: 'help' }}>
               <TextField
                 label="From"
+                variant="outlined"
                 type="datetime-local"
                 size="small"
                 InputLabelProps={{ shrink: true }}
                 value={dateStart}
                 onChange={(e) => setDateStart(e.target.value)}
               />
+                </Box>
+              </Tooltip>
+              <Tooltip title="End date/time for event filter." placement="top" arrow enterDelay={400}>
+                <Box sx={{ cursor: 'help' }}>
               <TextField
                 label="To"
+                variant="outlined"
                 type="datetime-local"
                 size="small"
                 InputLabelProps={{ shrink: true }}
                 value={dateEnd}
                 onChange={(e) => setDateEnd(e.target.value)}
               />
+                </Box>
+              </Tooltip>
             </Box>
             {loadingEvents ? (
               <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>

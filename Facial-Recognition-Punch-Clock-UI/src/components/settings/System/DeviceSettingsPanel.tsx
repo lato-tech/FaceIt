@@ -1,6 +1,5 @@
 import React from 'react';
-import { Paper, Typography, Box, TextField } from '@mui/material';
-
+import { Paper, Typography, Box, TextField, Tooltip } from '@mui/material';
 type Props = {
   deviceSettings: { organization: string; location: string };
   setDeviceSettings: (settings: { organization: string; location: string }) => void;
@@ -14,31 +13,61 @@ const DeviceSettingsPanel: React.FC<Props> = ({ deviceSettings, setDeviceSetting
         Organization & Device
       </Typography>
       <Box display="grid" gridTemplateColumns="1fr 1fr" gap={2}>
-        <TextField
-          label="Organization / Company"
-          value={deviceSettings.organization}
-          onChange={(e) => setDeviceSettings({ ...deviceSettings, organization: e.target.value })}
-        />
-        <TextField
-          label="Device Location"
-          value={deviceSettings.location}
-          onChange={(e) => setDeviceSettings({ ...deviceSettings, location: e.target.value })}
-        />
-        <TextField
-          label="Device IP (Internal)"
-          value={deviceInfo.internalIp || 'N/A'}
-          InputProps={{ readOnly: true }}
-        />
-        <TextField
-          label="Device IP (External)"
-          value={deviceInfo.externalIp || 'N/A'}
-          InputProps={{ readOnly: true }}
-        />
-        <TextField
-          label="Tailscale IP"
-          value={deviceInfo.tailscaleIp || 'N/A'}
-          InputProps={{ readOnly: true }}
-        />
+        <Tooltip title="Your company or organization name. Shown on the punch clock display." placement="top" arrow enterDelay={400}>
+          <Box sx={{ cursor: 'help' }}>
+            <TextField
+              label="Organization / Company"
+              variant="outlined"
+              fullWidth
+              value={deviceSettings.organization}
+              onChange={(e) => setDeviceSettings({ ...deviceSettings, organization: e.target.value })}
+            />
+          </Box>
+        </Tooltip>
+        <Tooltip title="Physical location of this device (e.g. building, floor, room). Shown on the display." placement="top" arrow enterDelay={400}>
+          <Box sx={{ cursor: 'help' }}>
+            <TextField
+              label="Device Location"
+              variant="outlined"
+              fullWidth
+              value={deviceSettings.location}
+              onChange={(e) => setDeviceSettings({ ...deviceSettings, location: e.target.value })}
+            />
+          </Box>
+        </Tooltip>
+        <Tooltip title="Local network IP address. Read-only." placement="top" arrow enterDelay={400}>
+          <Box sx={{ cursor: 'help' }}>
+            <TextField
+              label="Device IP (Internal)"
+              variant="outlined"
+              fullWidth
+              value={deviceInfo.internalIp || 'N/A'}
+              InputProps={{ readOnly: true }}
+            />
+          </Box>
+        </Tooltip>
+        <Tooltip title="Public IP address (if visible). Read-only." placement="top" arrow enterDelay={400}>
+          <Box sx={{ cursor: 'help' }}>
+            <TextField
+              label="Device IP (External)"
+              variant="outlined"
+              fullWidth
+              value={deviceInfo.externalIp || 'N/A'}
+              InputProps={{ readOnly: true }}
+            />
+          </Box>
+        </Tooltip>
+        <Tooltip title="Tailscale VPN IP if Tailscale is installed. Read-only." placement="top" arrow enterDelay={400}>
+          <Box sx={{ cursor: 'help' }}>
+            <TextField
+              label="Tailscale IP"
+              variant="outlined"
+              fullWidth
+              value={deviceInfo.tailscaleIp || 'N/A'}
+              InputProps={{ readOnly: true }}
+            />
+          </Box>
+        </Tooltip>
       </Box>
     </Paper>
   );

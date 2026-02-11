@@ -1,5 +1,5 @@
 import React from 'react';
-import { Paper, Typography, Box, Button } from '@mui/material';
+import { Paper, Typography, Box, Button, Tooltip } from '@mui/material';
 import { Link } from 'react-router-dom';
 import { Sliders as SlidersIcon } from 'lucide-react';
 
@@ -24,16 +24,17 @@ const SpecialFeaturesPanel: React.FC<Props> = ({ industries }) => {
         {industries.map((industry) => {
           const Icon = industry.icon;
           return (
-            <Button
-              key={industry.id}
-              component={Link}
-              to={industry.path}
-              startIcon={<Icon size={18} />}
-              variant="outlined"
-              sx={{ justifyContent: 'flex-start' }}
-            >
-              {industry.name}
-            </Button>
+            <Tooltip key={industry.id} title={`${industry.name} - industry-specific settings`} placement="right" arrow enterDelay={400}>
+              <Button
+                component={Link}
+                to={industry.path}
+                startIcon={<Icon size={18} />}
+                variant="outlined"
+                sx={{ justifyContent: 'flex-start' }}
+              >
+                {industry.name}
+              </Button>
+            </Tooltip>
           );
         })}
       </Box>

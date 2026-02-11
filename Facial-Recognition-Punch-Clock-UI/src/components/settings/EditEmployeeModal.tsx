@@ -10,6 +10,7 @@ import {
   Checkbox,
   FormControlLabel,
   Stack,
+  Tooltip,
 } from '@mui/material';
 import { Employee } from '../../utils/types';
 import FaceRegistration from './FaceRegistration';
@@ -103,36 +104,58 @@ const EditEmployeeModal = ({
         {step === 'info' ? (
           <form onSubmit={handleSubmit}>
             <Stack spacing={2}>
-              <TextField
-                label="Employee ID"
-                value={formData.id}
-                onChange={(e) => setFormData({ ...formData, id: e.target.value })}
-                required
-                fullWidth
-                disabled
-                helperText="Employee ID cannot be changed"
-              />
-              <TextField
-                label="Full Name"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                required
-                fullWidth
-              />
-              <TextField
-                label="Department"
-                value={formData.department}
-                onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                required
-                fullWidth
-              />
-              <TextField
-                label="Photo URL"
-                value={formData.photo}
-                onChange={(e) => setFormData({ ...formData, photo: e.target.value })}
-                fullWidth
-                helperText="You can use a full URL or /api/profiles/ID.jpg"
-              />
+              <Tooltip title="Employee ID. Cannot be changed." placement="top" arrow enterDelay={400}>
+                <Box sx={{ cursor: 'help' }}>
+                  <TextField
+                    label="Employee ID"
+                    variant="outlined"
+                    value={formData.id}
+                    onChange={(e) => setFormData({ ...formData, id: e.target.value })}
+                    required
+                    fullWidth
+                    disabled
+                    helperText="Employee ID cannot be changed"
+                  />
+                </Box>
+              </Tooltip>
+              <Tooltip title="Full name of the employee." placement="top" arrow enterDelay={400}>
+                <Box sx={{ cursor: 'help' }}>
+                  <TextField
+                    label="Full Name"
+                    variant="outlined"
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    required
+                    fullWidth
+                  />
+                </Box>
+              </Tooltip>
+              <Tooltip title="Department or team the employee belongs to." placement="top" arrow enterDelay={400}>
+                <Box sx={{ cursor: 'help' }}>
+                  <TextField
+                    label="Department"
+                    variant="outlined"
+                    value={formData.department}
+                    onChange={(e) => setFormData({ ...formData, department: e.target.value })}
+                    required
+                    fullWidth
+                  />
+                </Box>
+              </Tooltip>
+              <Tooltip title="URL for profile photo. Use full URL or /api/profiles/ID.jpg" placement="top" arrow enterDelay={400}>
+                <Box sx={{ cursor: 'help' }}>
+                  <TextField
+                    label="Photo URL"
+                    variant="outlined"
+                    value={formData.photo}
+                    onChange={(e) => setFormData({ ...formData, photo: e.target.value })}
+                    fullWidth
+                    helperText="You can use a full URL or /api/profiles/ID.jpg"
+                  />
+                </Box>
+              </Tooltip>
+              <Tooltip title="Whether the employee is active. Inactive employees are excluded from recognition." placement="top" arrow enterDelay={400}>
+                <Box sx={{ cursor: 'help' }}>
               <FormControlLabel
                 control={
                   <Checkbox
@@ -142,6 +165,8 @@ const EditEmployeeModal = ({
                 }
                 label="Active"
               />
+                </Box>
+              </Tooltip>
 
               <Box display="flex" justifyContent="space-between" gap={2} mt={2}>
                 <Button

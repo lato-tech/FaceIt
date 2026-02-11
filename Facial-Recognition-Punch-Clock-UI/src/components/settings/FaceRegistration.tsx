@@ -10,6 +10,7 @@ import {
   Alert,
   Snackbar,
   CircularProgress,
+  Tooltip,
 } from '@mui/material';
 import { keyframes } from '@mui/system';
 
@@ -842,19 +843,19 @@ const FaceRegistration: React.FC<FaceRegistrationProps> = ({ employeeId: propEmp
         justifyContent: 'center',
       }}>
         {/* Employee ID Input */}
-        <TextField
-          label="Employee ID"
-          placeholder="Enter Employee ID"
-          fullWidth
-          value={employeeId}
-          onChange={(e) => setEmployeeId(e.target.value)}
-          disabled={isSubmitting || allAnglesValidated}
-          sx={{ 
-            position: 'relative', 
-            zIndex: 100, 
-            pointerEvents: 'auto',
-          }}
-        />
+        <Tooltip title="Enter the employee ID to register face for. Required for face registration." placement="top" arrow enterDelay={400}>
+          <Box sx={{ cursor: 'help', position: 'relative', zIndex: 100, pointerEvents: 'auto' }}>
+            <TextField
+              label="Employee ID"
+              variant="outlined"
+              placeholder="Enter Employee ID"
+              fullWidth
+              value={employeeId}
+              onChange={(e) => setEmployeeId(e.target.value)}
+              disabled={isSubmitting || allAnglesValidated}
+            />
+          </Box>
+        </Tooltip>
 
         {/* Action Buttons */}
         <Box 

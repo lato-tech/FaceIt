@@ -59,11 +59,11 @@ STREAM_WIDTH = 640
 STREAM_HEIGHT = 360
 STREAM_JPEG_QUALITY = 70
 STREAM_MIN_WIDTH = 320
-STREAM_MAX_WIDTH = 1280
+STREAM_MAX_WIDTH = 1920
 STREAM_MIN_HEIGHT = 240
-STREAM_MAX_HEIGHT = 720
+STREAM_MAX_HEIGHT = 1080
 STREAM_MIN_QUALITY = 50
-STREAM_MAX_QUALITY = 90
+STREAM_MAX_QUALITY = 100
 
 # Event logs (anti-spoofing, multi-face, detection stats)
 event_log_lock = threading.Lock()
@@ -136,11 +136,16 @@ except Exception as cascade_error:
 camera_manager = None
 camera_active = False
 last_camera_init_attempt = 0.0
+last_camera_init_error = ''
 
 # Camera settings (runtime)
 camera_settings = {
     'faceDetectionThreshold': 0.6,
+    'recognitionDistance': 0.5,
     'cameraResolution': '1080p',
+    'streamResolution': '720p',
+    'streamQuality': 90,
+    'streamFps': 30,
     'colorTone': 'natural',
     'enhancedLighting': True
 }
@@ -263,6 +268,7 @@ def _set_profile_photo_cache(cache_key: str, data: bytes, mime: str):
  
 def _get_resolution_dims(resolution: str):
     mapping = {
+        '480p': (854, 480),
         '720p': (1280, 720),
         '1080p': (1920, 1080),
         '1440p': (2560, 1440),
@@ -453,11 +459,12 @@ def _detect_spoof(frame, face_location):
         return None
 
 def _apply_detection_threshold():
-    """Apply detection threshold to face detector."""
+    """Apply detection threshold and recognition distance to face detector."""
     global face_detector
     try:
         if face_detector is not None:
             face_detector.min_confidence_threshold = float(camera_settings.get('faceDetectionThreshold', 0.85))
+            face_detector.recognition_tolerance = float(camera_settings.get('recognitionDistance', 0.5))
     except Exception as e:
         print(f"⚠️  Could not apply detection threshold: {e}")
 
@@ -555,7 +562,7 @@ def _analyze_face_attributes(frame, face_location):
 
 def initialize_camera():
     """Initialize camera using enhanced CameraManager"""
-    global camera_manager, camera_active
+    global camera_manager, camera_active, last_camera_init_error
     
     if camera_manager and camera_manager.is_initialized:
         return True
@@ -606,10 +613,12 @@ def initialize_camera():
             camera_active = True
             return True
         else:
+            last_camera_init_error = 'Camera failed to open (Picamera2 and OpenCV fallback failed). Check camera connection and permissions.'
             print("❌ Failed to initialize camera using CameraManager")
             return False
             
     except Exception as e:
+        last_camera_init_error = str(e)
         print(f"❌ Camera initialization error: {e}")
         import traceback
         traceback.print_exc()
@@ -727,9 +736,10 @@ def _parse_stream_arg(value, default, min_value, max_value):
         return default
 
 
-def generate_optimized_video_stream(width=STREAM_WIDTH, height=STREAM_HEIGHT, quality=STREAM_JPEG_QUALITY):
-    """  optimized video stream - smooth, non-blocking"""
+def generate_optimized_video_stream(width=STREAM_WIDTH, height=STREAM_HEIGHT, quality=STREAM_JPEG_QUALITY, fps=30):
+    """  optimized video stream - smooth, non-blocking. fps controls stream frame rate."""
     global camera_active, frame_buffer
+    frame_interval = 1.0 / max(1, min(60, fps)) if fps else 0.02
     try:
         while True:
             if not camera_active:
@@ -763,7 +773,7 @@ def generate_optimized_video_stream(width=STREAM_WIDTH, height=STREAM_HEIGHT, qu
                     frame_bytes = buffer.tobytes()
                     yield (b'--frame\r\n'
                            b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
-                    time.sleep(0.02)  # ~50 fps cap for smoother, consistent stream
+                    time.sleep(frame_interval)
             else:
                 # Send a blank frame if camera is not available
                 blank_frame = np.zeros((height, width, 3), dtype=np.uint8)
@@ -1262,7 +1272,7 @@ def load_known_faces():
         face_detector = FaceDetector(
             known_face_encodings=known_face_encodings,
             known_face_names=known_face_names,
-            recognition_tolerance=Config.FACE_RECOGNITION_TOLERANCE
+            recognition_tolerance=float(camera_settings.get('recognitionDistance', Config.FACE_RECOGNITION_TOLERANCE))
         )
         print("🔍 Face detector initialized with recognition capabilities")
     else:
@@ -2295,24 +2305,23 @@ def get_erpnext_employees():
 @app.route('/api/camera/stream', methods=['GET'])
 def camera_stream():
     """Stream camera feed with integrated face recognition as MJPEG"""
-    stream_width = _parse_stream_arg(
-        request.args.get('w'),
-        STREAM_WIDTH,
-        STREAM_MIN_WIDTH,
-        STREAM_MAX_WIDTH
-    )
-    stream_height = _parse_stream_arg(
-        request.args.get('h'),
-        STREAM_HEIGHT,
-        STREAM_MIN_HEIGHT,
-        STREAM_MAX_HEIGHT
-    )
+    # Use query params if provided, else camera_settings (Stream Resolution, Quality, FPS)
+    w_arg = request.args.get('w')
+    h_arg = request.args.get('h')
+    if w_arg and h_arg:
+        stream_width = _parse_stream_arg(w_arg, STREAM_WIDTH, STREAM_MIN_WIDTH, STREAM_MAX_WIDTH)
+        stream_height = _parse_stream_arg(h_arg, STREAM_HEIGHT, STREAM_MIN_HEIGHT, STREAM_MAX_HEIGHT)
+    else:
+        sw, sh = _get_resolution_dims(camera_settings.get('streamResolution', '720p'))
+        stream_width = min(max(sw, STREAM_MIN_WIDTH), STREAM_MAX_WIDTH)
+        stream_height = min(max(sh, STREAM_MIN_HEIGHT), STREAM_MAX_HEIGHT)
     stream_quality = _parse_stream_arg(
         request.args.get('q'),
-        STREAM_JPEG_QUALITY,
+        int(camera_settings.get('streamQuality', STREAM_JPEG_QUALITY)),
         STREAM_MIN_QUALITY,
         STREAM_MAX_QUALITY
     )
+    stream_fps = max(1, min(60, int(camera_settings.get('streamFps', 30))))
     try:
         if not camera_active:
             if ensure_camera_ready(force=True):
@@ -2325,7 +2334,8 @@ def camera_stream():
         generate_optimized_video_stream(
             width=stream_width,
             height=stream_height,
-            quality=stream_quality
+            quality=stream_quality,
+            fps=stream_fps
         ),
         mimetype='multipart/x-mixed-replace; boundary=frame'
     )
@@ -2431,8 +2441,11 @@ def start_camera():
                     'message': 'Camera started with optimized face recognition pipeline'
                 })
             else:
-                log_event_entry(event_type='camera_start_failed', message='Camera failed to initialize')
-                return jsonify({'error': 'Failed to initialize camera'}), 500
+                err_msg = last_camera_init_error or 'Failed to initialize camera'
+                if 'Pipeline handler in use' in err_msg or 'resource busy' in err_msg.lower():
+                    err_msg = 'Camera in use by another process. Stop other apps or restart the backend (FR-start.sh).'
+                log_event_entry(event_type='camera_start_failed', message=err_msg)
+                return jsonify({'error': err_msg}), 500
 
         if _should_log_event('camera_start_skipped', 10):
             log_event_entry(event_type='camera_start_skipped', message='Camera already active')
@@ -2938,7 +2951,7 @@ def update_camera_settings():
         camera_settings.update(data)
         _apply_detection_threshold()
 
-        # Restart camera if resolution changed
+        # Restart camera if capture resolution changed (Stream Resolution applies on next stream connection)
         if camera_active and 'cameraResolution' in data:
             try:
                 stop_camera()
