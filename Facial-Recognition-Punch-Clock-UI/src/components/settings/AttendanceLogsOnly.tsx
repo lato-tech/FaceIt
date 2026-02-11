@@ -12,12 +12,19 @@ import {
   IconButton,
   Chip,
   Button,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Snackbar,
+  Alert,
 } from '@mui/material';
-import { Edit } from 'lucide-react';
+import { Edit, Trash2 } from 'lucide-react';
 import { AttendanceLog } from '../../utils/types';
 import EditAttendanceLogModal from './EditAttendanceLogModal';
 
-const API_BASE = import.meta.env.VITE_API_BASE || (window.location.protocol + '//' + window.location.hostname + ':5002/api');
+import { API_BASE } from '../../utils/api';
+const API_ROOT = API_BASE.replace(/\/api\/?$/, '') || window.location.origin;
 
 const parseTimestamp = (value?: string) => {
   if (!value) return 0;
@@ -30,17 +37,19 @@ const AttendanceLogsOnly: React.FC = () => {
   const [attendanceLogs, setAttendanceLogs] = useState<AttendanceLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingLog, setEditingLog] = useState<AttendanceLog | null>(null);
+  const [deleteLog, setDeleteLog] = useState<AttendanceLog | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
 
-  useEffect(() => {
-    const fetchLogs = async () => {
-      setLoading(true);
-      try {
-        const response = await fetch(`${API_BASE}/attendance`);
-        const result = await response.json();
+  const fetchLogs = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/attendance`);
+      const result = await response.json();
         if (response.ok && result.attendance) {
           const logs: AttendanceLog[] = result.attendance.map((item: Record<string, unknown>) => {
             const rawStatus = (item.status || 'Present').toString();
@@ -60,6 +69,7 @@ const AttendanceLogsOnly: React.FC = () => {
               status: normalizedStatus,
               confidence: item.confidence != null ? Number(item.confidence) : undefined,
               mode: manual ? 'manual' : 'auto',
+              snapshotUrl: item.snapshot_url ? `${API_ROOT}${(item.snapshot_url as string).startsWith('/') ? '' : '/'}${item.snapshot_url}` : undefined,
               modified: item.modified_reason
                 ? {
                     by: (item.modified_by as string) || 'Admin',
@@ -71,12 +81,14 @@ const AttendanceLogsOnly: React.FC = () => {
           });
           setAttendanceLogs(logs);
         }
-      } catch (error) {
-        console.error('Error fetching attendance:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
+    } catch (error) {
+      console.error('Error fetching attendance:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchLogs();
     const interval = setInterval(fetchLogs, 30000);
     return () => clearInterval(interval);
@@ -148,6 +160,7 @@ const AttendanceLogsOnly: React.FC = () => {
           <TableHead>
             <TableRow>
               <TableCell>#</TableCell>
+              <TableCell>Snapshot</TableCell>
               <TableCell>Time</TableCell>
               <TableCell>Type</TableCell>
               <TableCell>Employee</TableCell>
@@ -161,6 +174,21 @@ const AttendanceLogsOnly: React.FC = () => {
             {pagedLogs.map((log, idx) => (
               <TableRow key={log.id} hover>
                 <TableCell>{page * rowsPerPage + idx + 1}</TableCell>
+                <TableCell>
+                  {log.snapshotUrl ? (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                      <Box
+                        component="img"
+                        src={log.snapshotUrl}
+                        alt="Snapshot"
+                        sx={{ width: 40, height: 40, objectFit: 'cover', borderRadius: 1, border: '1px solid', borderColor: 'divider' }}
+                      />
+                      <a href={log.snapshotUrl} target="_blank" rel="noreferrer" style={{ fontSize: '0.75rem' }}>View</a>
+                    </Box>
+                  ) : (
+                    '-'
+                  )}
+                </TableCell>
                 <TableCell>{formatTimestamp(log.timestamp)}</TableCell>
                 <TableCell>{typeLabel(log.type)}</TableCell>
                 <TableCell>
@@ -178,15 +206,23 @@ const AttendanceLogsOnly: React.FC = () => {
                   <Chip label={log.status} size="small" color={statusColor(log.status)} sx={{ textTransform: 'capitalize' }} />
                 </TableCell>
                 <TableCell>
-                  <IconButton color="primary" onClick={() => setEditingLog(log)}>
+                  <IconButton color="primary" onClick={() => setEditingLog(log)} size="small" title="Edit">
                     <Edit size={18} />
+                  </IconButton>
+                  <IconButton
+                    color="error"
+                    size="small"
+                    title="Delete"
+                    onClick={() => setDeleteLog(log)}
+                  >
+                    <Trash2 size={18} />
                   </IconButton>
                 </TableCell>
               </TableRow>
             ))}
             {pagedLogs.length === 0 && (
               <TableRow>
-                <TableCell colSpan={8} align="center">
+                <TableCell colSpan={9} align="center">
                   {loading ? 'Loading...' : 'No attendance records found'}
                 </TableCell>
               </TableRow>
@@ -230,6 +266,51 @@ const AttendanceLogsOnly: React.FC = () => {
           </Button>
         </Box>
       </Box>
+
+      {deleteLog && (
+        <Dialog open={!!deleteLog} onClose={() => !deleting && setDeleteLog(null)}>
+          <DialogTitle>Delete attendance log?</DialogTitle>
+          <DialogContent>
+            <Typography variant="body2">
+              Delete the log for {deleteLog.employeeName} ({deleteLog.employeeId}) at {deleteLog.timestamp}?
+            </Typography>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setDeleteLog(null)} disabled={deleting}>Cancel</Button>
+            <Button
+              color="error"
+              variant="contained"
+              disabled={deleting}
+              onClick={async () => {
+                setDeleting(true);
+                try {
+                  const res = await fetch(`${API_BASE}/attendance/${deleteLog.id}`, { method: 'DELETE' });
+                  const data = res.ok ? null : await res.json().catch(() => ({}));
+                  if (res.ok) {
+                    setAttendanceLogs((prev) => prev.filter((l) => l.id !== deleteLog.id));
+                    setDeleteLog(null);
+                    fetchLogs();
+                  } else {
+                    setDeleteError(data?.error || res.statusText || 'Delete failed');
+                  }
+                } catch (e) {
+                  setDeleteError(e instanceof Error ? e.message : 'Delete failed');
+                } finally {
+                  setDeleting(false);
+                }
+              }}
+            >
+              {deleting ? 'Deleting...' : 'Delete'}
+            </Button>
+          </DialogActions>
+        </Dialog>
+      )}
+
+      <Snackbar open={!!deleteError} autoHideDuration={6000} onClose={() => setDeleteError(null)}>
+        <Alert severity="error" onClose={() => setDeleteError(null)}>
+          {deleteError}
+        </Alert>
+      </Snackbar>
 
       {editingLog && (
         <EditAttendanceLogModal

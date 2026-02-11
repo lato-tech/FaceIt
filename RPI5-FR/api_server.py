@@ -94,6 +94,22 @@ def _save_event_image(frame, prefix: str) -> str:
         print(f"⚠️  Event image save error: {e}")
         return ''
 
+def _save_attendance_snapshot(frame) -> str:
+    """Save a snapshot of the frame for attendance log. Returns filename or empty string."""
+    try:
+        # Use script dir so path is correct regardless of cwd
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        snap_dir = os.path.join(base_dir, 'logs', 'attendance_snapshots')
+        os.makedirs(snap_dir, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"att_{timestamp}.jpg"
+        filepath = os.path.join(snap_dir, filename)
+        cv2.imwrite(filepath, frame)
+        return filename
+    except Exception as e:
+        print(f"⚠️  Attendance snapshot save error: {e}")
+        return ''
+
 def log_event_entry(event_type: str, message: str = '', image_filename: str = '', metadata: dict = None):
     try:
         from db import db
@@ -987,7 +1003,7 @@ def recognition_worker():
                 now_dt = datetime.now()
                 if name not in last_attendance_time or \
                    (now_dt - last_attendance_time[name]).seconds > attendance_cooldown:
-                    attendance_info = record_attendance(name, confidence=raw_conf)
+                    attendance_info = record_attendance(name, confidence=raw_conf, frame=frame)
                     last_attendance_time[name] = now_dt
                     if recognized_payload and recognized_payload.get('data', {}).get('name') == name:
                         recognized_payload['data'].update({
@@ -2092,6 +2108,10 @@ def get_attendance_log():
         from db import db
         limit = min(int(request.args.get('limit', 200)), 1000)
         logs = db.get_attendance_logs(limit=limit)
+        for log in logs:
+            snap = log.get('snapshot_path')
+            if snap:
+                log['snapshot_url'] = f"/api/attendance/snapshots/{snap}"
         return jsonify({
             'attendance': logs,
             'count': len(logs)
@@ -2099,6 +2119,16 @@ def get_attendance_log():
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/attendance/snapshots/<path:filename>', methods=['GET'])
+def get_attendance_snapshot(filename):
+    """Serve attendance snapshot images."""
+    try:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        snap_dir = os.path.join(base_dir, 'logs', 'attendance_snapshots')
+        return send_from_directory(snap_dir, filename)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 404
 
 @app.route('/api/event-logs', methods=['GET'])
 def get_event_logs():
@@ -2167,6 +2197,18 @@ def update_attendance_log(log_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/attendance/<int:log_id>', methods=['DELETE'])
+def delete_attendance_log(log_id):
+    """Delete an attendance log entry"""
+    try:
+        from db import db
+        ok = db.delete_attendance_log(log_id)
+        if not ok:
+            return jsonify({'error': 'Log not found'}), 404
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/faces', methods=['GET'])
 def get_registered_faces():
     """Get list of registered faces"""
@@ -2224,10 +2266,14 @@ def reload_faces():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-def record_attendance(name, confidence=None, status='Present', event_type='check-in'):
-    """Record attendance for the recognized person"""
+def record_attendance(name, confidence=None, status='Present', event_type='check-in', frame=None):
+    """Record attendance for the recognized person. Optionally saves snapshot if frame is provided."""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"✅ Attendance recorded for {name} at {timestamp}")
+
+    snapshot_path = ''
+    if frame is not None and frame.size > 0:
+        snapshot_path = _save_attendance_snapshot(frame)
 
     try:
         from db import db
@@ -2239,7 +2285,8 @@ def record_attendance(name, confidence=None, status='Present', event_type='check
             employee_name=employee_name,
             confidence=confidence,
             status=status,
-            event_type=event_type
+            event_type=event_type,
+            snapshot_path=snapshot_path or None
         )
     except Exception as e:
         print(f"⚠️  Could not write attendance to DB: {e}")

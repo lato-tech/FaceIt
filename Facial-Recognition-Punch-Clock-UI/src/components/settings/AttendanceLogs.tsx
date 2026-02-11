@@ -12,12 +12,19 @@ import {
   IconButton,
   Chip,
   Button,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Snackbar,
+  Alert,
 } from '@mui/material';
-import { Edit, AlertCircle } from 'lucide-react';
+import { Edit, AlertCircle, Trash2 } from 'lucide-react';
 import { AttendanceLog, EventLog } from '../../utils/types';
 import EditAttendanceLogModal from './EditAttendanceLogModal';
 
-const API_BASE = import.meta.env.VITE_API_BASE || (window.location.protocol + '//' + window.location.hostname + ':5002/api');
+import { API_BASE } from '../../utils/api';
+const API_ROOT = API_BASE.replace(/\/api\/?$/, '') || window.location.origin;
 
 type CombinedLog = {
   id: string;
@@ -37,19 +44,21 @@ const AttendanceLogs: React.FC = () => {
   const [eventLogs, setEventLogs] = useState<EventLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingLog, setEditingLog] = useState<AttendanceLog | null>(null);
+  const [deleteLog, setDeleteLog] = useState<AttendanceLog | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
 
-  useEffect(() => {
-    const fetchLogs = async () => {
-      setLoading(true);
-      try {
-        const [attendanceResponse, eventsResponse] = await Promise.all([
-          fetch(`${API_BASE}/attendance`),
-          fetch(`${API_BASE}/event-logs?limit=500`),
-        ]);
+  const fetchLogs = async () => {
+    setLoading(true);
+    try {
+      const [attendanceResponse, eventsResponse] = await Promise.all([
+        fetch(`${API_BASE}/attendance`),
+        fetch(`${API_BASE}/event-logs?limit=500`),
+      ]);
         const attendanceResult = await attendanceResponse.json();
         const eventsResult = await eventsResponse.json();
 
@@ -71,6 +80,7 @@ const AttendanceLogs: React.FC = () => {
               status: normalizedStatus,
               confidence: item.confidence != null ? Number(item.confidence) : undefined,
               mode: manual ? 'manual' : 'auto',
+              snapshotUrl: item.snapshot_url ? `${API_ROOT}${item.snapshot_url.startsWith('/') ? '' : '/'}${item.snapshot_url}` : undefined,
               modified: item.modified_reason ? {
                 by: item.modified_by || 'Admin',
                 reason: item.modified_reason,
@@ -99,8 +109,8 @@ const AttendanceLogs: React.FC = () => {
       }
     };
 
+  useEffect(() => {
     fetchLogs();
-    // Refresh every 30 seconds
     const interval = setInterval(fetchLogs, 30000);
     return () => clearInterval(interval);
   }, []);
@@ -116,6 +126,7 @@ const AttendanceLogs: React.FC = () => {
       attendanceLog: log,
       confidence: log.confidence,
       mode: log.mode,
+      imageUrl: log.snapshotUrl,
     }));
     const eventCombined: CombinedLog[] = eventLogs.map((log) => ({
       id: `evt-${log.id}`,
@@ -124,7 +135,7 @@ const AttendanceLogs: React.FC = () => {
       typeLabel: log.eventType.replace(/_/g, ' ').toUpperCase(),
       details: log.message || '-',
       status: log.eventType.replace(/_/g, ' '),
-      imageUrl: log.imageUrl,
+      imageUrl: log.imageUrl ? `${API_ROOT}${log.imageUrl.startsWith('/') ? '' : '/'}${log.imageUrl}` : undefined,
     }));
     return [...attendanceCombined, ...eventCombined].sort((a, b) => {
       return parseTimestamp(b.timestamp) - parseTimestamp(a.timestamp);
@@ -218,7 +229,7 @@ const AttendanceLogs: React.FC = () => {
               <TableCell>Confidence</TableCell>
               <TableCell>Mode</TableCell>
               <TableCell>Status</TableCell>
-              <TableCell>Image</TableCell>
+              <TableCell>Snapshot</TableCell>
               <TableCell>Actions</TableCell>
             </TableRow>
           </TableHead>
@@ -255,7 +266,15 @@ const AttendanceLogs: React.FC = () => {
                 </TableCell>
                 <TableCell>
                   {log.imageUrl ? (
-                    <a href={log.imageUrl} target="_blank" rel="noreferrer">View</a>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                      <Box
+                        component="img"
+                        src={log.imageUrl}
+                        alt="Snapshot"
+                        sx={{ width: 40, height: 40, objectFit: 'cover', borderRadius: 1, border: '1px solid', borderColor: 'divider' }}
+                      />
+                      <a href={log.imageUrl} target="_blank" rel="noreferrer" style={{ fontSize: '0.75rem' }}>View</a>
+                    </Box>
                   ) : (
                     '-'
                   )}
@@ -263,11 +282,19 @@ const AttendanceLogs: React.FC = () => {
                 <TableCell>
                   {log.source === 'attendance' && log.attendanceLog && (
                     <>
-                      <IconButton color="primary" onClick={() => setEditingLog(log.attendanceLog!)}>
+                      <IconButton color="primary" onClick={() => setEditingLog(log.attendanceLog!)} size="small" title="Edit">
                         <Edit size={18} />
                       </IconButton>
+                      <IconButton
+                        color="error"
+                        size="small"
+                        title="Delete"
+                        onClick={() => setDeleteLog(log.attendanceLog!)}
+                      >
+                        <Trash2 size={18} />
+                      </IconButton>
                       {log.attendanceLog.status === 'modified' && (
-                        <IconButton color="warning">
+                        <IconButton color="warning" size="small">
                           <AlertCircle size={18} />
                         </IconButton>
                       )}
@@ -330,6 +357,51 @@ const AttendanceLogs: React.FC = () => {
           </Button>
         </Box>
       </Box>
+
+      {deleteLog && (
+        <Dialog open={!!deleteLog} onClose={() => !deleting && setDeleteLog(null)}>
+          <DialogTitle>Delete attendance log?</DialogTitle>
+          <DialogContent>
+            <Typography variant="body2">
+              Delete the log for {deleteLog.employeeName} ({deleteLog.employeeId}) at {deleteLog.timestamp}?
+            </Typography>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setDeleteLog(null)} disabled={deleting}>Cancel</Button>
+            <Button
+              color="error"
+              variant="contained"
+              disabled={deleting}
+              onClick={async () => {
+                setDeleting(true);
+                try {
+                  const res = await fetch(`${API_BASE}/attendance/${deleteLog.id}`, { method: 'DELETE' });
+                  const data = res.ok ? null : await res.json().catch(() => ({}));
+                  if (res.ok) {
+                    setAttendanceLogs((prev) => prev.filter((l) => l.id !== deleteLog.id));
+                    setDeleteLog(null);
+                    fetchLogs(); // Refetch to ensure UI stays in sync
+                  } else {
+                    setDeleteError(data?.error || res.statusText || 'Delete failed');
+                  }
+                } catch (e) {
+                  setDeleteError(e instanceof Error ? e.message : 'Delete failed');
+                } finally {
+                  setDeleting(false);
+                }
+              }}
+            >
+              {deleting ? 'Deleting...' : 'Delete'}
+            </Button>
+          </DialogActions>
+        </Dialog>
+      )}
+
+      <Snackbar open={!!deleteError} autoHideDuration={6000} onClose={() => setDeleteError(null)}>
+        <Alert severity="error" onClose={() => setDeleteError(null)}>
+          {deleteError}
+        </Alert>
+      </Snackbar>
 
       {editingLog && (
         <EditAttendanceLogModal

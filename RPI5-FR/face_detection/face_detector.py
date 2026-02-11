@@ -104,8 +104,35 @@ class FaceDetector:
             face_locations = face_recognition.face_locations(rgb_image)
             face_encodings = face_recognition.face_encodings(rgb_image, face_locations)
             
+            # Get landmarks to filter for frontal faces only (reject profile/side view)
+            landmarks_list = []
+            try:
+                landmarks_list = face_recognition.face_landmarks(rgb_image, face_locations, model='large')
+            except Exception:
+                pass  # If landmarks fail, process all faces (fail open)
+            
             results = []
             for i, (face_location, face_encoding) in enumerate(zip(face_locations, face_encodings)):
+                # Filter: only accept faces facing the camera (reject side/profile view)
+                top, right, bottom, left = face_location
+                if i < len(landmarks_list):
+                    try:
+                        landmarks = landmarks_list[i]
+                        left_eye = landmarks.get('left_eye', [])
+                        right_eye = landmarks.get('right_eye', [])
+                        nose_tip = landmarks.get('nose_tip', [])
+                        if left_eye and right_eye and nose_tip:
+                            left_eye_center = np.mean(np.array(left_eye), axis=0)
+                            right_eye_center = np.mean(np.array(right_eye), axis=0)
+                            nose_center = np.mean(np.array(nose_tip), axis=0)
+                            face_center_x = (left + right) / 2.0
+                            face_w = max(1.0, right - left)
+                            nose_offset_x = (nose_center[0] - face_center_x) / face_w
+                            # Reject faces turned too much (profile/side view). 0.2 = ~25°; stricter = 0.15
+                            if abs(nose_offset_x) > 0.2:
+                                continue  # Skip this face - not facing camera
+                    except Exception:
+                        pass  # On error, allow face (fail open)
                 # Calculate distances to all known faces
                 if self.known_face_encodings:
                     face_distances = face_recognition.face_distance(self.known_face_encodings, face_encoding)

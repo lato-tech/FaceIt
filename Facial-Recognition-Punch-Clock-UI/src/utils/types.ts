@@ -17,6 +17,7 @@ export interface AttendanceLog {
   status: string;
   confidence?: number | null;
   mode?: 'auto' | 'manual';
+  snapshotUrl?: string;
   modified?: {
     by: string;
     reason: string;

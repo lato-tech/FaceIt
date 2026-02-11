@@ -130,6 +130,7 @@ class Database:
         self._ensure_column('attendance_logs', 'modified_reason', 'TEXT')
         self._ensure_column('attendance_logs', 'modified_at', 'TEXT')
         self._ensure_column('attendance_logs', 'original_timestamp', 'TEXT')
+        self._ensure_column('attendance_logs', 'snapshot_path', 'TEXT')
         self._ensure_column('event_logs', 'event_type', 'TEXT')
         self._ensure_column('event_logs', 'message', 'TEXT')
         self._ensure_column('event_logs', 'image_path', 'TEXT')
@@ -271,7 +272,8 @@ class Database:
                       confidence: float = None, status: str = 'Present',
                       event_type: str = 'check-in',
                       synced: bool = False,
-                      manual: bool = False) -> Optional[int]:
+                      manual: bool = False,
+                      snapshot_path: str = None) -> Optional[int]:
         """Log attendance for an employee"""
         try:
             now = datetime.now().isoformat()
@@ -280,9 +282,9 @@ class Database:
                 cursor = conn.cursor()
                 cursor.execute('''
                     INSERT INTO attendance_logs 
-                    (employee_id, employee_name, timestamp, confidence, status, event_type, synced, manual, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (employee_id, employee_name, timestamp, confidence, status, event_type, int(synced), int(manual), now))
+                    (employee_id, employee_name, timestamp, confidence, status, event_type, synced, manual, snapshot_path, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (employee_id, employee_name, timestamp, confidence, status, event_type, int(synced), int(manual), snapshot_path or '', now))
                 logger.info(f"Attendance logged: {employee_name} ({employee_id}) at {timestamp}")
                 return cursor.lastrowid
         except Exception as e:
@@ -368,6 +370,30 @@ class Database:
         except Exception as e:
             logger.error(f"Error getting attendance logs: {e}")
             return []
+
+    def delete_attendance_log(self, log_id: int) -> bool:
+        """Delete an attendance log entry and its snapshot file if any."""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('SELECT snapshot_path FROM attendance_logs WHERE id = ?', (log_id,))
+                row = cursor.fetchone()
+                snapshot_path = row['snapshot_path'] if row and row['snapshot_path'] else None
+                cursor.execute('DELETE FROM attendance_logs WHERE id = ?', (log_id,))
+                deleted = cursor.rowcount > 0
+            if deleted and snapshot_path:
+                try:
+                    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                    snap_dir = os.path.join(base_dir, 'logs', 'attendance_snapshots')
+                    filepath = os.path.join(snap_dir, snapshot_path)
+                    if os.path.isfile(filepath):
+                        os.remove(filepath)
+                except Exception as e:
+                    logger.warning(f"Could not remove attendance snapshot {snapshot_path}: {e}")
+            return deleted
+        except Exception as e:
+            logger.error(f"Error deleting attendance log {log_id}: {e}")
+            return False
 
     def log_event(self, event_type: str, message: str = '',
                   image_path: Optional[str] = None,

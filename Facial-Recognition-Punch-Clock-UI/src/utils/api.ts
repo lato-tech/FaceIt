@@ -1,5 +1,9 @@
-// API base URL - use env or current host so it works from any device
-const API_BASE = import.meta.env?.VITE_API_BASE || `${window.location.protocol}//${window.location.hostname}:5002/api`;
+// API base URL - use proxy when on Vite dev/preview (port 5173) to avoid CORS
+export const API_BASE =
+  import.meta.env?.VITE_API_BASE ||
+  (typeof window !== 'undefined' && window.location.port === '5173'
+    ? '/api'
+    : `${window.location.protocol}//${window.location.hostname}:5002/api`);
 
 // Health check for facial recognition API
 export const checkRecognitionHealth = async () => {

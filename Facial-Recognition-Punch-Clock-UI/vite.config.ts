@@ -7,6 +7,16 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
-    allowedHosts: ['faceit.getlato.com']
-  }
+    host: true,
+    allowedHosts: true,
+    proxy: {
+      '/api': {
+        target: 'http://127.0.0.1:5002',
+        changeOrigin: true,
+      },
+    },
+  },
+  preview: {
+    port: 5173,
+  },
 })
