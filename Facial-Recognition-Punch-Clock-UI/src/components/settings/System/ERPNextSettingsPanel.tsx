@@ -51,83 +51,38 @@ const ERPNextSettingsPanel: React.FC<Props> = ({
 
       <Box display="grid" gridTemplateColumns="1fr 1fr" gap={2}>
         <Tooltip title="ERPNext instance URL (e.g. https://your-company.erpnext.com)." placement="top" arrow enterDelay={400}>
-          <Box sx={{ cursor: 'help' }}>
-            <TextField
-              label="Server URL"
-              variant="outlined"
-              fullWidth
-              value={settings.serverUrl}
-              onChange={(e) => setSettings({ ...settings, serverUrl: e.target.value })}
-            />
+          <Box sx={{ cursor: 'help', width: '100%', minWidth: 0 }}>
+            <TextField label="Server URL" variant="outlined" fullWidth value={settings.serverUrl} onChange={(e) => setSettings({ ...settings, serverUrl: e.target.value })} InputLabelProps={{ shrink: true }} />
           </Box>
         </Tooltip>
         <Tooltip title="ERPNext company name to sync with." placement="top" arrow enterDelay={400}>
-          <Box sx={{ cursor: 'help' }}>
-            <TextField
-              label="Company"
-              variant="outlined"
-              fullWidth
-              value={settings.company}
-              onChange={(e) => setSettings({ ...settings, company: e.target.value })}
-            />
+          <Box sx={{ cursor: 'help', width: '100%', minWidth: 0 }}>
+            <TextField label="Company" variant="outlined" fullWidth value={settings.company} onChange={(e) => setSettings({ ...settings, company: e.target.value })} InputLabelProps={{ shrink: true }} />
           </Box>
         </Tooltip>
         <Tooltip title="ERPNext login username." placement="top" arrow enterDelay={400}>
-          <Box sx={{ cursor: 'help' }}>
-            <TextField
-              label="Username"
-              variant="outlined"
-              fullWidth
-              value={settings.username}
-              onChange={(e) => setSettings({ ...settings, username: e.target.value })}
-            />
+          <Box sx={{ cursor: 'help', width: '100%', minWidth: 0 }}>
+            <TextField label="Username" variant="outlined" fullWidth value={settings.username} onChange={(e) => setSettings({ ...settings, username: e.target.value })} InputLabelProps={{ shrink: true }} />
           </Box>
         </Tooltip>
         <Tooltip title="ERPNext login password." placement="top" arrow enterDelay={400}>
-          <Box sx={{ cursor: 'help' }}>
-            <TextField
-              label="Password"
-              variant="outlined"
-              fullWidth
-              type="password"
-              value={settings.password}
-              onChange={(e) => setSettings({ ...settings, password: e.target.value })}
-            />
+          <Box sx={{ cursor: 'help', width: '100%', minWidth: 0 }}>
+            <TextField label="Password" variant="outlined" fullWidth type="password" value={settings.password} onChange={(e) => setSettings({ ...settings, password: e.target.value })} InputLabelProps={{ shrink: true }} />
           </Box>
         </Tooltip>
         <Tooltip title="Optional API key for token-based auth." placement="top" arrow enterDelay={400}>
-          <Box sx={{ cursor: 'help' }}>
-            <TextField
-              label="API Key"
-              variant="outlined"
-              fullWidth
-              value={settings.apiKey}
-              onChange={(e) => setSettings({ ...settings, apiKey: e.target.value })}
-            />
+          <Box sx={{ cursor: 'help', width: '100%', minWidth: 0 }}>
+            <TextField label="API Key" variant="outlined" fullWidth value={settings.apiKey} onChange={(e) => setSettings({ ...settings, apiKey: e.target.value })} InputLabelProps={{ shrink: true }} />
           </Box>
         </Tooltip>
         <Tooltip title="Optional API secret (keep secure)." placement="top" arrow enterDelay={400}>
-          <Box sx={{ cursor: 'help' }}>
-            <TextField
-              label="API Secret"
-              variant="outlined"
-              fullWidth
-              type="password"
-              value={settings.apiSecret}
-              onChange={(e) => setSettings({ ...settings, apiSecret: e.target.value })}
-            />
+          <Box sx={{ cursor: 'help', width: '100%', minWidth: 0 }}>
+            <TextField label="API Secret" variant="outlined" fullWidth type="password" value={settings.apiSecret} onChange={(e) => setSettings({ ...settings, apiSecret: e.target.value })} InputLabelProps={{ shrink: true }} />
           </Box>
         </Tooltip>
         <Tooltip title="How often to sync attendance logs to ERPNext (in minutes). Default: 5" placement="top" arrow enterDelay={400}>
-          <Box sx={{ cursor: 'help' }}>
-            <TextField
-              label="Sync Interval (minutes)"
-              variant="outlined"
-              fullWidth
-              type="number"
-              value={settings.syncInterval}
-              onChange={(e) => setSettings({ ...settings, syncInterval: Number(e.target.value) })}
-            />
+          <Box sx={{ cursor: 'help', width: '100%', minWidth: 0 }}>
+            <TextField label="Sync Interval (minutes)" variant="outlined" fullWidth type="number" value={settings.syncInterval} onChange={(e) => setSettings({ ...settings, syncInterval: Number(e.target.value) })} InputLabelProps={{ shrink: true }} />
           </Box>
         </Tooltip>
       </Box>

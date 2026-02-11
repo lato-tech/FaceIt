@@ -125,7 +125,7 @@ const EditAttendanceLogModal = ({
             <Tooltip title="Date and time of the attendance event." placement="top" arrow enterDelay={400}>
               <Box sx={{ cursor: 'help' }}>
                 <TextField
-              label="Timestamp"
+                  label="Timestamp"
               variant="outlined"
               type="datetime-local"
               value={formData.timestamp.replace(' ', 'T').slice(0, 16)}
@@ -145,7 +145,7 @@ const EditAttendanceLogModal = ({
             <Tooltip title="Reason for modifying this attendance log. Required when editing." placement="top" arrow enterDelay={400}>
               <Box sx={{ cursor: 'help' }}>
                 <TextField
-              label="Modification Reason"
+                  label="Modification Reason"
               variant="outlined"
               multiline
               rows={3}

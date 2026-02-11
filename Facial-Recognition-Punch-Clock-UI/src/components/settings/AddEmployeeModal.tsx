@@ -120,64 +120,27 @@ const AddEmployeeModal = ({ isOpen, onClose, onSubmit }: AddEmployeeModalProps) 
           <Box component="form" onSubmit={handleSubmit} sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             <Tooltip title="Unique identifier for the employee. Used for face registration. Required." placement="top" arrow enterDelay={400}>
               <Box sx={{ cursor: 'help' }}>
-                <TextField
-                  label="Employee ID"
-                  variant="outlined"
-                  fullWidth
-                  required
-                  value={formData.id}
-                  onChange={(e) => setFormData({ ...formData, id: e.target.value })}
-                  helperText="Required - This will be used for face registration"
-                />
+                <TextField label="Employee ID" variant="outlined" fullWidth required value={formData.id} onChange={(e) => setFormData({ ...formData, id: e.target.value })} helperText="Required - This will be used for face registration" />
               </Box>
             </Tooltip>
             <Tooltip title="Full name of the employee. Required." placement="top" arrow enterDelay={400}>
               <Box sx={{ cursor: 'help' }}>
-                <TextField
-                  label="Full Name"
-                  variant="outlined"
-                  fullWidth
-                  required
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                />
+                <TextField label="Full Name" variant="outlined" fullWidth required value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} />
               </Box>
             </Tooltip>
             <Tooltip title="Department or team the employee belongs to. Required." placement="top" arrow enterDelay={400}>
               <Box sx={{ cursor: 'help' }}>
-                <TextField
-                  label="Department"
-                  variant="outlined"
-                  fullWidth
-                  required
-                  value={formData.department}
-                  onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                />
+                <TextField label="Department" variant="outlined" fullWidth required value={formData.department} onChange={(e) => setFormData({ ...formData, department: e.target.value })} />
               </Box>
             </Tooltip>
             <Tooltip title="Optional URL for profile photo. Use full URL or /api/profiles/ID.jpg" placement="top" arrow enterDelay={400}>
               <Box sx={{ cursor: 'help' }}>
-                <TextField
-                  label="Photo URL"
-                  variant="outlined"
-                  fullWidth
-                  value={formData.photo}
-                  onChange={(e) => setFormData({ ...formData, photo: e.target.value })}
-                  helperText="You can use a full URL or /api/profiles/ID.jpg"
-                />
+                <TextField label="Photo URL" variant="outlined" fullWidth value={formData.photo} onChange={(e) => setFormData({ ...formData, photo: e.target.value })} helperText="You can use a full URL or /api/profiles/ID.jpg" />
               </Box>
             </Tooltip>
             <Tooltip title="Employee join date. Optional." placement="top" arrow enterDelay={400}>
               <Box sx={{ cursor: 'help' }}>
-                <TextField
-                  label="Join Date"
-                  variant="outlined"
-                  fullWidth
-                  type="date"
-                  InputLabelProps={{ shrink: true }}
-                  value={formData.joinDate}
-                  onChange={(e) => setFormData({ ...formData, joinDate: e.target.value })}
-                />
+                <TextField label="Join Date" variant="outlined" fullWidth type="date" InputLabelProps={{ shrink: true }} value={formData.joinDate} onChange={(e) => setFormData({ ...formData, joinDate: e.target.value })} />
               </Box>
             </Tooltip>
           </Box>
