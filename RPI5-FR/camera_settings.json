@@ -1,0 +1,10 @@
+{
+  "faceDetectionThreshold": 0.95,
+  "recognitionDistance": 0.45,
+  "cameraResolution": "720p",
+  "streamResolution": "720p",
+  "streamQuality": 85,
+  "streamFps": 30,
+  "colorTone": "natural",
+  "enhancedLighting": false
+}

@@ -32,7 +32,13 @@ import {
   MemoryStick,
   ThermometerIcon,
   MapPinIcon,
-  Building2
+  Building2,
+  Sun,
+  Cloud,
+  CloudRain,
+  CloudSnow,
+  CloudLightning,
+  Wind
 } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import CityDataDisplay from './CityDataDisplay';
@@ -499,19 +505,49 @@ const IdleHomeOverlay: React.FC<{
     second: '2-digit',
     hour12: timeFormat === '12h',
   });
-  const dateLabel = now.toLocaleDateString([], {
+  const dayLabel = now.toLocaleDateString([], {
     weekday: 'long',
+  });
+  const dateLabel = now.toLocaleDateString([], {
     year: 'numeric',
     month: 'long',
     day: 'numeric',
   });
   const weatherLabel = cityData?.description || cityData?.discription || '-';
-  const tempLabel = cityData?.temp || (typeof cityData?.temperature === 'number' ? `${cityData.temperature}°C` : '-');
+  const weatherCode = Number(cityData?.weathercode);
+  const rawTemp = cityData?.temp ?? (typeof cityData?.temperature === 'number' ? cityData.temperature : null);
+  const tempLabel = (() => {
+    if (rawTemp == null) return '-';
+    if (typeof rawTemp === 'number') return `${rawTemp}° C`;
+    const n = parseFloat(String(rawTemp));
+    if (!Number.isNaN(n)) return `${n}° C`;
+    return String(rawTemp).replace('°C', '° C');
+  })();
   const cityLabel = cityData?.city || '-';
   const stateLabel = cityData?.state || '-';
   const countryLabel = cityData?.country || '-';
   const deviceLocationLabel = deviceSettings?.location || '-';
   const deviceOrgLabel = deviceSettings?.organization || '-';
+  const weatherIcon = (() => {
+    // Open-Meteo weather code mapping.
+    if (!Number.isNaN(weatherCode)) {
+      if (weatherCode === 0) return <Sun size={28} />;
+      if ([1, 2, 3].includes(weatherCode)) return <Cloud size={28} />;
+      if ([45, 48].includes(weatherCode)) return <Wind size={28} />;
+      if ([51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82].includes(weatherCode)) return <CloudRain size={28} />;
+      if ([71, 73, 75, 77, 85, 86].includes(weatherCode)) return <CloudSnow size={28} />;
+      if ([95, 96, 99].includes(weatherCode)) return <CloudLightning size={28} />;
+    }
+
+    const lower = String(weatherLabel || '').toLowerCase();
+    if (lower.includes('thunder') || lower.includes('storm')) return <CloudLightning size={28} />;
+    if (lower.includes('snow') || lower.includes('sleet') || lower.includes('blizzard')) return <CloudSnow size={28} />;
+    if (lower.includes('rain') || lower.includes('drizzle') || lower.includes('shower')) return <CloudRain size={28} />;
+    if (lower.includes('fog') || lower.includes('mist') || lower.includes('haze')) return <Wind size={28} />;
+    if (lower.includes('cloud')) return <Cloud size={28} />;
+    if (lower.includes('sun') || lower.includes('clear')) return <Sun size={28} />;
+    return <Cloud size={28} />;
+  })();
 
   return (
     <Box
@@ -533,7 +569,7 @@ const IdleHomeOverlay: React.FC<{
           sx={{
             fontWeight: 700,
             letterSpacing: 2,
-            fontSize: { xs: '3rem', md: '6rem' },
+            fontSize: { xs: '4rem', md: '8rem' },
             lineHeight: 1.05,
             textAlign: 'center',
             mb: 1,
@@ -542,8 +578,14 @@ const IdleHomeOverlay: React.FC<{
           {timeLabel}
         </Typography>
         <Typography
+          variant="h4"
+          sx={{ textAlign: 'center', color: 'rgba(255,255,255,0.85)', mb: 0.5, fontWeight: 600 }}
+        >
+          {dayLabel}
+        </Typography>
+        <Typography
           variant="h5"
-          sx={{ textAlign: 'center', color: 'rgba(255,255,255,0.75)', mb: 5 }}
+          sx={{ textAlign: 'center', color: 'rgba(255,255,255,0.75)', mb: 5, fontSize: { xs: '1.25rem', md: '2rem' } }}
         >
           {dateLabel}
         </Typography>
@@ -557,7 +599,10 @@ const IdleHomeOverlay: React.FC<{
         >
           <Paper sx={{ p: 2.5, bgcolor: 'rgba(255,255,255,0.08)', color: '#fff', borderRadius: 2 }}>
             <Typography variant="overline" sx={{ color: 'rgba(255,255,255,0.7)' }}>Weather</Typography>
-            <Typography variant="h4" sx={{ fontWeight: 600 }}>{tempLabel}</Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              {weatherIcon}
+              <Typography variant="h4" sx={{ fontWeight: 600 }}>{tempLabel}</Typography>
+            </Box>
             <Typography variant="body1" sx={{ color: 'rgba(255,255,255,0.8)' }}>{weatherLabel}</Typography>
           </Paper>
           <Paper sx={{ p: 2.5, bgcolor: 'rgba(255,255,255,0.08)', color: '#fff', borderRadius: 2 }}>
@@ -632,6 +677,8 @@ const CameraFeed: React.FC = () => {
   const logLookupRef = useRef<string | null>(null);
   const motionCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const prevMotionFrameRef = useRef<Uint8ClampedArray | null>(null);
+  const lastPointerActivityAtRef = useRef<number>(0);
+  const recognitionIdleRef = useRef<boolean | null>(null);
 
   // Custom hooks
   const { cameraStatus, systemStatus, startCamera, stopCamera, restartCamera } = useCameraControls();
@@ -691,6 +738,23 @@ const CameraFeed: React.FC = () => {
   useEffect(() => {
     const ticker = setInterval(() => setNowMs(Date.now()), 1000);
     return () => clearInterval(ticker);
+  }, []);
+
+  useEffect(() => {
+    const onUserPointerActivity = () => {
+      const now = Date.now();
+      if (now - lastPointerActivityAtRef.current < 300) return;
+      lastPointerActivityAtRef.current = now;
+      setLastSignificantActivityAt(now);
+      setShowIdleHome(false);
+    };
+
+    window.addEventListener('mousemove', onUserPointerActivity, { passive: true });
+    window.addEventListener('click', onUserPointerActivity, { passive: true });
+    return () => {
+      window.removeEventListener('mousemove', onUserPointerActivity);
+      window.removeEventListener('click', onUserPointerActivity);
+    };
   }, []);
 
   useEffect(() => {
@@ -994,12 +1058,6 @@ const CameraFeed: React.FC = () => {
   }, [showOverlays, cameraStatus, lastEventAt]);
 
   useEffect(() => {
-    if (currentFaces.length > 0) {
-      setLastSignificantActivityAt(Date.now());
-    }
-  }, [currentFaces.length]);
-
-  useEffect(() => {
     if (cameraStatus !== 'active') {
       prevMotionFrameRef.current = null;
       setShowIdleHome(false);
@@ -1058,20 +1116,34 @@ const CameraFeed: React.FC = () => {
       setShowIdleHome(false);
       return;
     }
-    if (currentFaces.length > 0) {
-      setShowIdleHome(false);
-      return;
-    }
     const idleMs = Math.max(3, Number(idleDisplaySettings.screensaverTimeoutSec || 15)) * 1000;
     const isIdle = Date.now() - lastSignificantActivityAt >= idleMs;
     setShowIdleHome(isIdle);
   }, [
     cameraStatus,
-    currentFaces.length,
     lastSignificantActivityAt,
     nowMs,
     idleDisplaySettings.screensaverTimeoutSec,
   ]);
+
+  useEffect(() => {
+    const syncRecognitionIdleMode = async (idle: boolean) => {
+      try {
+        await fetch(`${API_BASE}/recognition/idle-mode`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ idle }),
+        });
+      } catch (error) {
+        console.error('Failed to sync recognition idle mode:', error);
+      }
+    };
+
+    const shouldIdle = cameraStatus === 'active' && showIdleHome;
+    if (recognitionIdleRef.current === shouldIdle) return;
+    recognitionIdleRef.current = shouldIdle;
+    syncRecognitionIdleMode(shouldIdle);
+  }, [cameraStatus, showIdleHome]);
   useEffect(() => {
     setCurrentFaces([]);
     setLastFacesAt(null);

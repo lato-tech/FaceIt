@@ -244,7 +244,7 @@ device_settings = {
 }
 
 # Time settings (runtime)
-time_settings = {
+TIME_SETTINGS_DEFAULTS = {
     'timeSource': 'auto',  # 'auto' | 'time.is' | 'ntp' | 'system'
     'ntpServers': [
         'time.google.com',
@@ -256,12 +256,17 @@ time_settings = {
     'screensaverTimeoutSec': 15,
     'movementSensitivityPercent': 50,
 }
+time_settings = dict(TIME_SETTINGS_DEFAULTS)
 
 # Attendance settings (runtime)
-attendance_settings = {
+ATTENDANCE_SETTINGS_DEFAULTS = {
     'duplicatePunchIntervalSec': Config.ATTENDANCE_COOLDOWN,
 }
+attendance_settings = dict(ATTENDANCE_SETTINGS_DEFAULTS)
 duplicate_broadcast_last = {}
+
+# Idle mode for recognition (used by screensaver to reduce CPU/GPU/RAM)
+recognition_idle_mode = False
 
 # RAM tuning: cache profile photos in memory to reduce disk I/O and UI stutter.
 PROFILE_PHOTO_CACHE_MAX = 200
@@ -350,7 +355,14 @@ def _load_time_settings():
         if os.path.exists(settings_file):
             with open(settings_file, 'r') as f:
                 data = json.load(f)
-                time_settings.update(data)
+                sanitized = _sanitize_time_settings(data)
+                time_settings.clear()
+                time_settings.update({**TIME_SETTINGS_DEFAULTS, **sanitized})
+                _write_json_file(settings_file, time_settings)
+        else:
+            time_settings.clear()
+            time_settings.update(TIME_SETTINGS_DEFAULTS)
+            _write_json_file(settings_file, time_settings)
     except Exception as e:
         print(f"⚠️  Could not load time settings: {e}")
 
@@ -362,10 +374,57 @@ def _load_attendance_settings():
         if os.path.exists(settings_file):
             with open(settings_file, 'r') as f:
                 data = json.load(f)
-                attendance_settings.update(data)
+                sanitized = _sanitize_attendance_settings(data)
+                attendance_settings.clear()
+                attendance_settings.update({**ATTENDANCE_SETTINGS_DEFAULTS, **sanitized})
+                _write_json_file(settings_file, attendance_settings)
+        else:
+            attendance_settings.clear()
+            attendance_settings.update(ATTENDANCE_SETTINGS_DEFAULTS)
+            _write_json_file(settings_file, attendance_settings)
         attendance_cooldown = int(attendance_settings.get('duplicatePunchIntervalSec', attendance_cooldown))
     except Exception as e:
         print(f"⚠️  Could not load attendance settings: {e}")
+
+def _write_json_file(path: str, data: dict):
+    with open(path, 'w') as f:
+        json.dump(data, f, indent=2)
+
+def _sanitize_time_settings(data):
+    if not isinstance(data, dict):
+        return {}
+    clean = {}
+    source = data.get('timeSource')
+    if source in ('auto', 'time.is', 'ntp', 'system'):
+        clean['timeSource'] = source
+    ntp_servers = data.get('ntpServers')
+    if isinstance(ntp_servers, list):
+        clean['ntpServers'] = [str(s).strip() for s in ntp_servers if str(s).strip()]
+    time_format = data.get('timeFormat')
+    if time_format in ('12h', '24h'):
+        clean['timeFormat'] = time_format
+    if 'screensaverTimeoutSec' in data:
+        try:
+            clean['screensaverTimeoutSec'] = max(3, min(300, int(data.get('screensaverTimeoutSec'))))
+        except Exception:
+            pass
+    if 'movementSensitivityPercent' in data:
+        try:
+            clean['movementSensitivityPercent'] = max(5, min(95, int(data.get('movementSensitivityPercent'))))
+        except Exception:
+            pass
+    return clean
+
+def _sanitize_attendance_settings(data):
+    if not isinstance(data, dict):
+        return {}
+    clean = {}
+    if 'duplicatePunchIntervalSec' in data:
+        try:
+            clean['duplicatePunchIntervalSec'] = max(1, min(3600, int(data.get('duplicatePunchIntervalSec'))))
+        except Exception:
+            pass
+    return clean
 
 def _get_system_time_ms():
     return int(time.time() * 1000)
@@ -1063,9 +1122,12 @@ def recognition_worker():
             time.sleep(1)
     logging.warning("Recognition worker exited")
 
-def start_recognition_pipeline():
+def start_recognition_pipeline(force=False):
     """Start the optimized recognition pipeline"""
-    global recognition_active, recognition_thread
+    global recognition_active, recognition_thread, recognition_idle_mode
+
+    if recognition_idle_mode and not force:
+        return False
     
     if recognition_thread is not None and not recognition_thread.is_alive():
         recognition_active = False
@@ -1115,6 +1177,40 @@ def stop_recognition_pipeline():
         print("🔍 Recognition pipeline stopped")
         return True
     return False
+
+def set_recognition_idle(idle: bool):
+    """Toggle recognition idle mode without stopping camera feed."""
+    global recognition_idle_mode
+    recognition_idle_mode = bool(idle)
+    if recognition_idle_mode:
+        stop_recognition_pipeline()
+        return {'idle': True, 'recognition_active': recognition_active}
+    if camera_active:
+        start_recognition_pipeline(force=True)
+    return {'idle': False, 'recognition_active': recognition_active}
+
+@app.route('/api/recognition/idle-mode', methods=['GET'])
+def get_recognition_idle_mode():
+    return jsonify({
+        'idle': recognition_idle_mode,
+        'recognition_active': recognition_active,
+        'camera_active': camera_active
+    })
+
+@app.route('/api/recognition/idle-mode', methods=['POST'])
+def update_recognition_idle_mode():
+    try:
+        payload = request.get_json(silent=True) or {}
+        idle = bool(payload.get('idle', False))
+        state = set_recognition_idle(idle)
+        return jsonify({
+            'success': True,
+            'idle': state.get('idle'),
+            'recognition_active': state.get('recognition_active'),
+            'camera_active': camera_active
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 def broadcast_recognition_results(faces_payload, recognized_payload=None):
     """Broadcast recognition results to all connected EventSource clients"""
@@ -2597,6 +2693,7 @@ def recognition_status():
         'last_results': recognition_results,
         'event_source_clients': client_count,
         'recognition_active': recognition_active,
+        'recognition_idle_mode': recognition_idle_mode,
         'last_heartbeat_age_sec': round(time.time() - last_recognition_heartbeat, 2) if last_recognition_heartbeat else None,
         'last_recognition_time_sec': round(time.time() - last_recognition_time, 2) if last_recognition_time else None,
         'last_detection_count': last_detection_count,
@@ -3268,11 +3365,15 @@ def get_time_settings():
     """Get time settings"""
     try:
         settings_file = 'time_settings.json'
+        merged = dict(TIME_SETTINGS_DEFAULTS)
         if os.path.exists(settings_file):
             with open(settings_file, 'r') as f:
                 data = json.load(f)
-                time_settings.update(data)
-        return jsonify(time_settings)
+                merged.update(_sanitize_time_settings(data))
+        _write_json_file(settings_file, merged)
+        time_settings.clear()
+        time_settings.update(merged)
+        return jsonify(merged)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -3281,10 +3382,13 @@ def update_time_settings():
     """Update time settings"""
     try:
         data = request.json or {}
+        clean = _sanitize_time_settings(data)
+        merged = dict(TIME_SETTINGS_DEFAULTS)
+        merged.update(clean)
         settings_file = 'time_settings.json'
-        with open(settings_file, 'w') as f:
-            json.dump(data, f, indent=2)
-        time_settings.update(data)
+        _write_json_file(settings_file, merged)
+        time_settings.clear()
+        time_settings.update(merged)
         return jsonify({
             'success': True,
             'message': 'Time settings updated successfully',
@@ -3298,11 +3402,15 @@ def get_attendance_settings():
     """Get attendance settings"""
     try:
         settings_file = 'attendance_settings.json'
+        merged = dict(ATTENDANCE_SETTINGS_DEFAULTS)
         if os.path.exists(settings_file):
             with open(settings_file, 'r') as f:
                 data = json.load(f)
-                attendance_settings.update(data)
-        return jsonify(attendance_settings)
+                merged.update(_sanitize_attendance_settings(data))
+        _write_json_file(settings_file, merged)
+        attendance_settings.clear()
+        attendance_settings.update(merged)
+        return jsonify(merged)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -3312,10 +3420,13 @@ def update_attendance_settings():
     try:
         global attendance_cooldown
         data = request.json or {}
+        clean = _sanitize_attendance_settings(data)
+        merged = dict(ATTENDANCE_SETTINGS_DEFAULTS)
+        merged.update(clean)
         settings_file = 'attendance_settings.json'
-        with open(settings_file, 'w') as f:
-            json.dump(data, f, indent=2)
-        attendance_settings.update(data)
+        _write_json_file(settings_file, merged)
+        attendance_settings.clear()
+        attendance_settings.update(merged)
         attendance_cooldown = int(attendance_settings.get('duplicatePunchIntervalSec', attendance_cooldown))
         return jsonify({
             'success': True,

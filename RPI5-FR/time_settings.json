@@ -6,5 +6,7 @@
     "time.cloudflare.com",
     "time.windows.com"
   ],
-  "timeFormat": "24h"
+  "timeFormat": "24h",
+  "screensaverTimeoutSec": 15,
+  "movementSensitivityPercent": 50
 }

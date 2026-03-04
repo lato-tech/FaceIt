@@ -34,7 +34,7 @@ const WeatherPanel: React.FC<Props> = ({
           <Autocomplete
             freeSolo
             options={options}
-            getOptionLabel={(option) => `${option.name}, ${option.country}`}
+            getOptionLabel={(option) => `${option.name}${option.admin1 ? `, ${option.admin1}` : ''}, ${option.country}`}
             onInputChange={handleInputChange}
             onChange={handleCitySelect}
             inputValue={inputValue}

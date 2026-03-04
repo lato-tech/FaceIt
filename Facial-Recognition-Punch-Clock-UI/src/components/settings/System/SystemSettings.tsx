@@ -366,12 +366,14 @@ const SystemSettings = () => {
       setCityData({
         city: newValue.name,
         country: newValue.country,
+        state: newValue.admin1 || newValue.admin2 || cityData?.state || '',
         lat: newValue.latitude,
         lon: newValue.longitude,
         timezoneOffset: data.utc_offset_seconds || 5.5 * 3600,
         temp: `${data.current_weather.temperature}°C`,
         wind: `${data.current_weather.windspeed}km/h`,
-        discription: getWeatherDescription(data.current_weather.weathercode)
+        description: getWeatherDescription(data.current_weather.weathercode),
+        discription: getWeatherDescription(data.current_weather.weathercode),
       });
     } catch (error) {
       console.error('Error fetching weather:', error);

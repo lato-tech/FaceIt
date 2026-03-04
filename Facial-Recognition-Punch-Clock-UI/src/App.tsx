@@ -1,5 +1,5 @@
 import ErrorBoundary from "./components/ErrorBoundary";
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 import FaceRecognitionSystem from './components/FaceRecognitionSystem';
 import Settings from './pages/Settings';
 import Sidebar from './components/layout/Sidebar';
@@ -8,6 +8,7 @@ import React, { useEffect, useState } from 'react';
 import Box from '@mui/material/Box';
 import { Alert, Grid, Snackbar } from '@mui/material';
 import { AppProvider, useAppContext } from './context/AppContext';
+const API_BASE = import.meta.env.VITE_API_BASE || (window.location.protocol + '//' + window.location.hostname + ':5002/api');
 
 const CpuWarningBanner = () => {
   const { cpuHigh, cpuAlertId, systemStats } = useAppContext();
@@ -40,6 +41,30 @@ const CpuWarningBanner = () => {
   );
 };
 
+const RecognitionRouteController = () => {
+  const location = useLocation();
+
+  useEffect(() => {
+    const onHomePage = location.pathname === '/';
+
+    const syncIdleMode = async () => {
+      try {
+        await fetch(`${API_BASE}/recognition/idle-mode`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ idle: !onHomePage }),
+        });
+      } catch (error) {
+        console.error('Failed to update recognition idle mode by route:', error);
+      }
+    };
+
+    syncIdleMode();
+  }, [location.pathname]);
+
+  return null;
+};
+
 export function App() {
   return (
     <ErrorBoundary><ThemeProvider>
@@ -47,6 +72,7 @@ export function App() {
       <AppProvider>
         <Box sx={{ width: '100%', height: '100vh', bgcolor: 'background.default', overflow: 'hidden' }}>
           <CpuWarningBanner />
+          <RecognitionRouteController />
           <Grid container sx={{ height: '100vh', overflow: 'hidden', width: '100%' }}>
             <Grid
 
