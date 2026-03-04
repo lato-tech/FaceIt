@@ -66,6 +66,7 @@ const SystemSettings = () => {
   const [deviceSettings, setDeviceSettings] = useState({
     organization: '',
     location: '',
+    country: '',
   });
   const [deviceInfo, setDeviceInfo] = useState<{ internalIp?: string | null; externalIp?: string | null; tailscaleIp?: string | null }>({});
   const [timeSettings, setTimeSettings] = useState({

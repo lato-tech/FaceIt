@@ -494,7 +494,7 @@ const StatusMonitor: React.FC<{
 
 const IdleHomeOverlay: React.FC<{
   cityData: any;
-  deviceSettings: { organization?: string; location?: string };
+  deviceSettings: { organization?: string; location?: string; country?: string };
   nowMs: number;
   timeFormat: '12h' | '24h';
 }> = ({ cityData, deviceSettings, nowMs, timeFormat }) => {
@@ -518,16 +518,17 @@ const IdleHomeOverlay: React.FC<{
   const rawTemp = cityData?.temp ?? (typeof cityData?.temperature === 'number' ? cityData.temperature : null);
   const tempLabel = (() => {
     if (rawTemp == null) return '-';
-    if (typeof rawTemp === 'number') return `${rawTemp}° C`;
+    if (typeof rawTemp === 'number') return `${rawTemp}°C`;
     const n = parseFloat(String(rawTemp));
-    if (!Number.isNaN(n)) return `${n}° C`;
-    return String(rawTemp).replace('°C', '° C');
+    if (!Number.isNaN(n)) return `${n}°C`;
+    return String(rawTemp).replace('° C', '°C');
   })();
   const cityLabel = cityData?.city || '-';
-  const stateLabel = cityData?.state || '-';
-  const countryLabel = cityData?.country || '-';
-  const deviceLocationLabel = deviceSettings?.location || '-';
-  const deviceOrgLabel = deviceSettings?.organization || '-';
+  const stateLabel = (cityData?.state || '').trim();
+  const countryLabel = (deviceSettings?.country || '').trim();
+  const locationDetail = [stateLabel, countryLabel].filter(Boolean).join(', ');
+  const deviceLocationLabel = (deviceSettings?.location || '').trim();
+  const deviceOrgLabel = (deviceSettings?.organization || '').trim();
   const weatherIcon = (() => {
     // Open-Meteo weather code mapping.
     if (!Number.isNaN(weatherCode)) {
@@ -573,6 +574,10 @@ const IdleHomeOverlay: React.FC<{
             lineHeight: 1.05,
             textAlign: 'center',
             mb: 1,
+            fontVariantNumeric: 'tabular-nums',
+            fontFeatureSettings: '"tnum" 1',
+            display: 'inline-block',
+            minWidth: '8.5ch',
           }}
         >
           {timeLabel}
@@ -608,9 +613,11 @@ const IdleHomeOverlay: React.FC<{
           <Paper sx={{ p: 2.5, bgcolor: 'rgba(255,255,255,0.08)', color: '#fff', borderRadius: 2 }}>
             <Typography variant="overline" sx={{ color: 'rgba(255,255,255,0.7)' }}>City / State</Typography>
             <Typography variant="h5" sx={{ fontWeight: 600 }}>{cityLabel}</Typography>
-            <Typography variant="body1" sx={{ color: 'rgba(255,255,255,0.8)' }}>
-              {stateLabel}, {countryLabel}
-            </Typography>
+            {locationDetail && (
+              <Typography variant="body1" sx={{ color: 'rgba(255,255,255,0.8)' }}>
+                {locationDetail}
+              </Typography>
+            )}
           </Paper>
           <Paper sx={{ p: 2.5, bgcolor: 'rgba(255,255,255,0.08)', color: '#fff', borderRadius: 2 }}>
             <Typography variant="overline" sx={{ color: 'rgba(255,255,255,0.7)' }}>Device Location</Typography>
@@ -648,7 +655,7 @@ const CameraFeed: React.FC = () => {
   const [employeeDirectory, setEmployeeDirectory] = useState<Record<string, any>>({});
   const [recognizedAt, setRecognizedAt] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [deviceSettings, setDeviceSettings] = useState<{ organization?: string; location?: string }>({});
+  const [deviceSettings, setDeviceSettings] = useState<{ organization?: string; location?: string; country?: string }>({});
   const [systemStats, setSystemStats] = useState<any>(null);
   const [showOverlays, setShowOverlays] = useState(true);
   const [idleDisplaySettings, setIdleDisplaySettings] = useState<IdleDisplaySettings>({

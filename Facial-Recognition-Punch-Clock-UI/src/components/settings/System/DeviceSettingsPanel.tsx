@@ -1,8 +1,8 @@
 import React from 'react';
 import { Paper, Typography, Box, TextField, Tooltip } from '@mui/material';
 type Props = {
-  deviceSettings: { organization: string; location: string };
-  setDeviceSettings: (settings: { organization: string; location: string }) => void;
+  deviceSettings: { organization: string; location: string; country?: string };
+  setDeviceSettings: (settings: { organization: string; location: string; country?: string }) => void;
   deviceInfo: { internalIp?: string | null; externalIp?: string | null; tailscaleIp?: string | null };
 };
 
@@ -21,6 +21,11 @@ const DeviceSettingsPanel: React.FC<Props> = ({ deviceSettings, setDeviceSetting
         <Tooltip title="Physical location of this device (e.g. building, floor, room). Shown on the display." placement="top" arrow enterDelay={400}>
           <Box sx={{ cursor: 'help', width: '100%', minWidth: 0 }}>
             <TextField label="Device Location" variant="outlined" fullWidth value={deviceSettings.location} onChange={(e) => setDeviceSettings({ ...deviceSettings, location: e.target.value })} InputLabelProps={{ shrink: true }} />
+          </Box>
+        </Tooltip>
+        <Tooltip title="Country shown on idle home display. Saved in backend settings." placement="top" arrow enterDelay={400}>
+          <Box sx={{ cursor: 'help', width: '100%', minWidth: 0 }}>
+            <TextField label="Country" variant="outlined" fullWidth value={deviceSettings.country || ''} onChange={(e) => setDeviceSettings({ ...deviceSettings, country: e.target.value })} InputLabelProps={{ shrink: true }} />
           </Box>
         </Tooltip>
         <Tooltip title="Local network IP address. Read-only." placement="top" arrow enterDelay={400}>
