@@ -89,7 +89,9 @@ class FaceDetector:
             
             # Downscale for faster recognition on RPi, then scale results back
             h, w = frame.shape[:2]
-            target_width = 640
+            # Keep more facial detail for recognition when subjects are farther away.
+            # 640 can make faces too small on wide scenes; 960 is a better trade-off.
+            target_width = 960
             scale = 1.0
             resized = frame
             if w > target_width:
@@ -142,15 +144,30 @@ class FaceDetector:
                     # Calculate confidence (distance-based)
                     confidence = 1.0 - min_distance
                     
-                    # Require clear winner: best match within tolerance AND clearly better than second-best (reduces false positives).
+                    # Require clear winner: compare against the next-best DIFFERENT person.
+                    # Multi-angle registrations add many encodings for the same person, which
+                    # would otherwise collapse the margin and incorrectly label valid matches unknown.
                     within_tolerance = min_distance <= self.recognition_tolerance
                     if len(face_distances) > 1:
                         sorted_indices = np.argsort(face_distances)
-                        second_min_distance = float(face_distances[sorted_indices[1]])
-                        margin = second_min_distance - min_distance
-                        clear_winner = margin >= 0.06  # require gap to avoid confusing similar-looking faces
+                        best_name = self.known_face_names[min_distance_index]
+                        second_min_distance = None
+                        for idx in sorted_indices:
+                            if idx == min_distance_index:
+                                continue
+                            if self.known_face_names[idx] != best_name:
+                                second_min_distance = float(face_distances[idx])
+                                break
+
+                        if second_min_distance is None:
+                            # Only one employee loaded (or all nearest encodings are same person).
+                            margin = 1.0
+                            clear_winner = True
+                        else:
+                            margin = second_min_distance - min_distance
+                            clear_winner = margin >= 0.06  # require gap to avoid confusing similar-looking faces
                     else:
-                        margin = 0.0
+                        margin = 1.0
                         clear_winner = True  # only one known face: no second-best to compare
                     if within_tolerance and clear_winner:
                         name = self.known_face_names[min_distance_index]

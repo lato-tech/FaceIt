@@ -1227,7 +1227,12 @@ def load_known_faces():
                     
                     try:
                         image = face_recognition.load_image_file(image_path)
-                        face_locations = face_recognition.face_locations(image)
+                        # Faster training load: use HOG with no upsample.
+                        face_locations = face_recognition.face_locations(
+                            image,
+                            number_of_times_to_upsample=0,
+                            model='hog'
+                        )
                         
                         if not face_locations:
                             continue
@@ -1262,7 +1267,12 @@ def load_known_faces():
             
             try:
                 image = face_recognition.load_image_file(file_path)
-                face_locations = face_recognition.face_locations(image)
+                # Faster training load: use HOG with no upsample.
+                face_locations = face_recognition.face_locations(
+                    image,
+                    number_of_times_to_upsample=0,
+                    model='hog'
+                )
                 
                 if not face_locations:
                     print(f"⚠️  No face detected in {filename} - skipping")
@@ -1299,7 +1309,12 @@ def _score_profile_candidate(image_path: str, angle_hint: str = '') -> float:
     """Score a candidate profile image based on face size + sharpness."""
     try:
         image = face_recognition.load_image_file(image_path)
-        face_locations = face_recognition.face_locations(image)
+        # Faster profile scoring path: use HOG with no upsample.
+        face_locations = face_recognition.face_locations(
+            image,
+            number_of_times_to_upsample=0,
+            model='hog'
+        )
         if not face_locations:
             return -1.0
 
@@ -1739,7 +1754,12 @@ def register_face():
                     
                     # Validate the saved image has a face
                     image = face_recognition.load_image_file(filepath)
-                    face_locations = face_recognition.face_locations(image)
+                    # Faster registration validation for batch uploads.
+                    face_locations = face_recognition.face_locations(
+                        image,
+                        number_of_times_to_upsample=0,
+                        model='hog'
+                    )
                     
                     if not face_locations:
                         # Remove the file if no face detected
@@ -1884,7 +1904,12 @@ def register_face():
             # Validate the saved image has a face
             try:
                 image = face_recognition.load_image_file(filepath)
-                face_locations = face_recognition.face_locations(image)
+                # Faster registration validation for single image uploads.
+                face_locations = face_recognition.face_locations(
+                    image,
+                    number_of_times_to_upsample=0,
+                    model='hog'
+                )
                 
                 if not face_locations:
                     # Remove the file if no face detected
