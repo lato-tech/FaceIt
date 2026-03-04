@@ -33,6 +33,39 @@ const industries = [
   { id: 'construction', name: 'Construction', icon: HardHatIcon, path: '/settings/industry/construction' },
 ];
 
+const pickForecastAtHours = (hourly: any, targetHoursAhead: number) => {
+  try {
+    const times: string[] = Array.isArray(hourly?.time) ? hourly.time : [];
+    const temps: any[] = Array.isArray(hourly?.temperature_2m) ? hourly.temperature_2m : [];
+    const codes: any[] = Array.isArray(hourly?.weathercode) ? hourly.weathercode : [];
+    if (!times.length || !temps.length) return null;
+
+    const targetTs = Date.now() + targetHoursAhead * 60 * 60 * 1000;
+    let bestIdx = -1;
+    let bestDelta = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < times.length; i += 1) {
+      const ts = new Date(times[i]).getTime();
+      if (!Number.isFinite(ts)) continue;
+      const delta = Math.abs(ts - targetTs);
+      if (delta < bestDelta) {
+        bestDelta = delta;
+        bestIdx = i;
+      }
+    }
+    if (bestIdx < 0) return null;
+    const tempNum = Number(temps[bestIdx]);
+    const codeNum = Number(codes[bestIdx]);
+    return {
+      hour: targetHoursAhead,
+      temp: Number.isFinite(tempNum) ? `${Math.round(tempNum)}°C` : '-',
+      weathercode: Number.isFinite(codeNum) ? codeNum : null,
+      description: Number.isFinite(codeNum) ? getWeatherDescription(codeNum) : '-',
+    };
+  } catch (_error) {
+    return null;
+  }
+};
+
 const SystemSettings = () => {
   const { setLanguage } = useLanguage();
   const [settings, setSettings] = useState({
@@ -75,6 +108,9 @@ const SystemSettings = () => {
     timeFormat: '24h',
     screensaverTimeoutSec: 15,
     movementSensitivityPercent: 50,
+    showNewsTicker: true,
+    newsSource: 'google_india',
+    newsRefreshMinutes: 15,
   });
   const [attendanceSettings, setAttendanceSettings] = useState({
     duplicatePunchIntervalSec: 30,
@@ -359,10 +395,12 @@ const SystemSettings = () => {
 
     setLoading(true);
     try {
-      const url = `https://api.open-meteo.com/v1/forecast?latitude=${newValue.latitude}&longitude=${newValue.longitude}&current_weather=true`;
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${newValue.latitude}&longitude=${newValue.longitude}&current_weather=true&hourly=temperature_2m,weathercode&forecast_days=3&timezone=Asia%2FKolkata`;
       const res = await fetch(url);
       const data = await res.json();
       setWeather(data.current_weather);
+      const forecast24h = pickForecastAtHours(data.hourly, 24);
+      const forecast48h = pickForecastAtHours(data.hourly, 48);
 
       setCityData({
         city: newValue.name,
@@ -373,8 +411,11 @@ const SystemSettings = () => {
         timezoneOffset: data.utc_offset_seconds || 5.5 * 3600,
         temp: `${data.current_weather.temperature}°C`,
         wind: `${data.current_weather.windspeed}km/h`,
+        weathercode: data.current_weather.weathercode,
         description: getWeatherDescription(data.current_weather.weathercode),
         discription: getWeatherDescription(data.current_weather.weathercode),
+        forecast24h,
+        forecast48h,
       });
     } catch (error) {
       console.error('Error fetching weather:', error);

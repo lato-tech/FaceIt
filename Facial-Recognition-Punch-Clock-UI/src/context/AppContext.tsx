@@ -16,19 +16,56 @@ const DEFAULT_CITY = {
   timezoneOffset: 330, // IST offset in minutes
 };
 
+const pickForecastAtHours = (hourly: any, targetHoursAhead: number) => {
+  try {
+    const times: string[] = Array.isArray(hourly?.time) ? hourly.time : [];
+    const temps: any[] = Array.isArray(hourly?.temperature_2m) ? hourly.temperature_2m : [];
+    const codes: any[] = Array.isArray(hourly?.weathercode) ? hourly.weathercode : [];
+    if (!times.length || !temps.length) return null;
+
+    const targetTs = Date.now() + targetHoursAhead * 60 * 60 * 1000;
+    let bestIdx = -1;
+    let bestDelta = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < times.length; i += 1) {
+      const ts = new Date(times[i]).getTime();
+      if (!Number.isFinite(ts)) continue;
+      const delta = Math.abs(ts - targetTs);
+      if (delta < bestDelta) {
+        bestDelta = delta;
+        bestIdx = i;
+      }
+    }
+    if (bestIdx < 0) return null;
+    const tempNum = Number(temps[bestIdx]);
+    const codeNum = Number(codes[bestIdx]);
+    return {
+      hour: targetHoursAhead,
+      temp: Number.isFinite(tempNum) ? `${Math.round(tempNum)}°C` : '-',
+      weathercode: Number.isFinite(codeNum) ? codeNum : null,
+      description: Number.isFinite(codeNum) ? getWeatherDescription(codeNum) : '-',
+    };
+  } catch (_error) {
+    return null;
+  }
+};
+
 // Fetch weather data from open-meteo API
 const fetchWeatherData = async (lat: number, lon: number) => {
   try {
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&timezone=Asia%2FKolkata`;
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&hourly=temperature_2m,weathercode&forecast_days=3&timezone=Asia%2FKolkata`;
     const res = await fetch(url);
     const data = await res.json();
     
     if (data && data.current_weather) {
+      const forecast24h = pickForecastAtHours(data.hourly, 24);
+      const forecast48h = pickForecastAtHours(data.hourly, 48);
       return {
         temp: data.current_weather.temperature,
         wind: data.current_weather.windspeed,
         weathercode: data.current_weather.weathercode,
         description: getWeatherDescription(data.current_weather.weathercode),
+        forecast24h,
+        forecast48h,
       };
     }
   } catch (error) {
@@ -73,8 +110,8 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
 
     loadWeatherData();
     
-    // Refresh weather every 1 minute
-    const interval = setInterval(loadWeatherData, 60 * 1000);
+    // Refresh weather every 5 minutes (lower API churn, still timely enough for dashboard use).
+    const interval = setInterval(loadWeatherData, 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, [cityData.lat, cityData.lon]);
 

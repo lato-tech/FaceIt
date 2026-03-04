@@ -257,6 +257,9 @@ TIME_SETTINGS_DEFAULTS = {
     'timeFormat': '24h',  # '12h' | '24h'
     'screensaverTimeoutSec': 15,
     'movementSensitivityPercent': 50,
+    'showNewsTicker': True,
+    'newsSource': 'google_india',
+    'newsRefreshMinutes': 15,
 }
 time_settings = dict(TIME_SETTINGS_DEFAULTS)
 
@@ -269,6 +272,20 @@ duplicate_broadcast_last = {}
 
 # Idle mode for recognition (used by screensaver to reduce CPU/GPU/RAM)
 recognition_idle_mode = False
+
+NEWS_SOURCE_FEEDS = {
+    'google_india': 'https://news.google.com/rss?hl=en-IN&gl=IN&ceid=IN:en',
+    'google_india_hi': 'https://news.google.com/rss?hl=hi&gl=IN&ceid=IN:hi',
+    'hindu': 'https://www.thehindu.com/news/national/feeder/default.rss',
+    'indian_express': 'https://indianexpress.com/section/india/feed/',
+    'ndtv': 'https://feeds.feedburner.com/ndtvnews-india-news',
+}
+news_cache = {
+    'source': None,
+    'expires_at': 0.0,
+    'items': [],
+    'last_error': None,
+}
 
 # RAM tuning: cache profile photos in memory to reduce disk I/O and UI stutter.
 PROFILE_PHOTO_CACHE_MAX = 200
@@ -422,7 +439,76 @@ def _sanitize_time_settings(data):
             clean['movementSensitivityPercent'] = max(5, min(95, int(data.get('movementSensitivityPercent'))))
         except Exception:
             pass
+    if 'showNewsTicker' in data:
+        clean['showNewsTicker'] = bool(data.get('showNewsTicker'))
+    source = str(data.get('newsSource') or '').strip().lower()
+    if source in NEWS_SOURCE_FEEDS:
+        clean['newsSource'] = source
+    if 'newsRefreshMinutes' in data:
+        try:
+            clean['newsRefreshMinutes'] = max(5, min(60, int(data.get('newsRefreshMinutes'))))
+        except Exception:
+            pass
     return clean
+
+
+def _strip_xml_namespace(tag: str) -> str:
+    if '}' in tag:
+        return tag.split('}', 1)[1]
+    return tag
+
+
+def _xml_find_text_any_namespace(parent, tag_name: str) -> str:
+    if parent is None:
+        return ''
+    for child in list(parent):
+        if _strip_xml_namespace(child.tag) == tag_name:
+            return (child.text or '').strip()
+    return ''
+
+
+def _fetch_news_headlines(source_key: str, limit: int = 5):
+    import html
+    import urllib.request
+    import xml.etree.ElementTree as ET
+
+    feed_url = NEWS_SOURCE_FEEDS.get(source_key) or NEWS_SOURCE_FEEDS['google_india']
+    req = urllib.request.Request(feed_url, headers={'User-Agent': 'Mozilla/5.0 FaceIt/1.0'})
+    with urllib.request.urlopen(req, timeout=6) as resp:
+        payload = resp.read()
+
+    root = ET.fromstring(payload)
+    channel = root.find('channel')
+    if channel is None:
+        # Some feeds can use Atom format.
+        for child in list(root):
+            if _strip_xml_namespace(child.tag) in ('feed', 'channel'):
+                channel = child
+                break
+    items = []
+    if channel is None:
+        return items
+
+    for item in list(channel):
+        tag = _strip_xml_namespace(item.tag)
+        if tag not in ('item', 'entry'):
+            continue
+        title = _xml_find_text_any_namespace(item, 'title')
+        link = _xml_find_text_any_namespace(item, 'link')
+        published = _xml_find_text_any_namespace(item, 'pubDate') or _xml_find_text_any_namespace(item, 'updated')
+        if not title:
+            continue
+        title = html.unescape(title).strip()
+        if not title:
+            continue
+        items.append({
+            'title': title,
+            'link': link,
+            'publishedAt': published,
+        })
+        if len(items) >= limit:
+            break
+    return items
 
 def _sanitize_attendance_settings(data):
     if not isinstance(data, dict):
@@ -3440,6 +3526,60 @@ def update_time_settings():
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/news/headlines', methods=['GET'])
+def get_news_headlines():
+    """Get cached India-focused headlines for screensaver ticker."""
+    try:
+        source = str(request.args.get('source') or time_settings.get('newsSource') or 'google_india').strip().lower()
+        if source not in NEWS_SOURCE_FEEDS:
+            source = 'google_india'
+        try:
+            limit = max(1, min(10, int(request.args.get('limit', 5))))
+        except Exception:
+            limit = 5
+
+        refresh_minutes = int(time_settings.get('newsRefreshMinutes') or 15)
+        refresh_minutes = max(5, min(60, refresh_minutes))
+        now_ts = time.time()
+
+        if (
+            news_cache.get('items')
+            and news_cache.get('source') == source
+            and float(news_cache.get('expires_at') or 0) > now_ts
+            and len(news_cache.get('items') or []) >= limit
+        ):
+            return jsonify({
+                'source': source,
+                'sourceLabel': source.replace('_', ' ').title(),
+                'cached': True,
+                'items': (news_cache.get('items') or [])[:limit],
+                'lastError': news_cache.get('last_error'),
+            })
+
+        items = _fetch_news_headlines(source, limit=max(limit, 8))
+        news_cache['source'] = source
+        news_cache['items'] = items
+        news_cache['expires_at'] = now_ts + (refresh_minutes * 60)
+        news_cache['last_error'] = None
+
+        return jsonify({
+            'source': source,
+            'sourceLabel': source.replace('_', ' ').title(),
+            'cached': False,
+            'items': items[:limit],
+            'lastError': None,
+        })
+    except Exception as e:
+        news_cache['last_error'] = str(e)
+        return jsonify({
+            'source': str(request.args.get('source') or time_settings.get('newsSource') or 'google_india'),
+            'sourceLabel': 'India Headlines',
+            'cached': False,
+            'items': [],
+            'lastError': str(e),
+        }), 200
 
 @app.route('/api/system/attendance-settings', methods=['GET'])
 def get_attendance_settings():

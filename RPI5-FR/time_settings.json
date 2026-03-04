@@ -8,5 +8,8 @@
   ],
   "timeFormat": "24h",
   "screensaverTimeoutSec": 15,
-  "movementSensitivityPercent": 50
+  "movementSensitivityPercent": 50,
+  "showNewsTicker": true,
+  "newsSource": "google_india",
+  "newsRefreshMinutes": 15
 }

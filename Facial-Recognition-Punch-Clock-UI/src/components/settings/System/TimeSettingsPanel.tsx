@@ -1,5 +1,5 @@
 import React from 'react';
-import { Paper, Typography, Box, FormControl, InputLabel, Select, MenuItem, TextField, Tooltip } from '@mui/material';
+import { Paper, Typography, Box, FormControl, InputLabel, Select, MenuItem, TextField, Tooltip, FormControlLabel, Switch } from '@mui/material';
 import { ClockIcon } from 'lucide-react';
 
 type Props = {
@@ -9,6 +9,9 @@ type Props = {
     timeFormat: string;
     screensaverTimeoutSec?: number;
     movementSensitivityPercent?: number;
+    showNewsTicker?: boolean;
+    newsSource?: string;
+    newsRefreshMinutes?: number;
   };
   setSettings: (settings: Props['settings']) => void;
 };
@@ -101,6 +104,60 @@ const TimeSettingsPanel: React.FC<Props> = ({ settings, setSettings }) => {
             onChange={(e) => setSettings({
               ...settings,
               movementSensitivityPercent: Math.min(95, Math.max(5, Number(e.target.value) || 50)),
+            })}
+          />
+        </Box>
+      </Tooltip>
+
+      <Tooltip title="Show India-focused headlines on the idle screensaver. Safe fallback: hides silently if unavailable." placement="top" arrow enterDelay={400}>
+        <Box sx={{ cursor: 'help', mt: 2 }}>
+          <FormControlLabel
+            control={(
+              <Switch
+                checked={Boolean(settings.showNewsTicker ?? true)}
+                onChange={(e) => setSettings({
+                  ...settings,
+                  showNewsTicker: e.target.checked,
+                })}
+              />
+            )}
+            label="Show News Ticker on Screensaver"
+          />
+        </Box>
+      </Tooltip>
+
+      <Tooltip title="Choose trusted India news feed source for the screensaver ticker." placement="top" arrow enterDelay={400}>
+        <Box sx={{ cursor: 'help', mt: 1 }}>
+          <FormControl fullWidth variant="outlined">
+            <InputLabel>News Source</InputLabel>
+            <Select
+              value={settings.newsSource || 'google_india'}
+              label="News Source"
+              onChange={(e) => setSettings({ ...settings, newsSource: String(e.target.value || 'google_india') })}
+              disabled={!Boolean(settings.showNewsTicker ?? true)}
+            >
+              <MenuItem value="google_india">Google News India (Recommended)</MenuItem>
+              <MenuItem value="hindu">The Hindu - National</MenuItem>
+              <MenuItem value="indian_express">Indian Express - India</MenuItem>
+              <MenuItem value="ndtv">NDTV - India</MenuItem>
+            </Select>
+          </FormControl>
+        </Box>
+      </Tooltip>
+
+      <Tooltip title="How often to refresh headlines from source. Lower is fresher but uses more network/API calls." placement="top" arrow enterDelay={400}>
+        <Box sx={{ cursor: 'help', mt: 2 }}>
+          <TextField
+            label="News Refresh (minutes)"
+            variant="outlined"
+            type="number"
+            fullWidth
+            disabled={!Boolean(settings.showNewsTicker ?? true)}
+            inputProps={{ min: 5, max: 60, step: 1 }}
+            value={Number(settings.newsRefreshMinutes ?? 15)}
+            onChange={(e) => setSettings({
+              ...settings,
+              newsRefreshMinutes: Math.min(60, Math.max(5, Number(e.target.value) || 15)),
             })}
           />
         </Box>

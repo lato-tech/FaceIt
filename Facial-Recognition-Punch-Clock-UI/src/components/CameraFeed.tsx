@@ -33,6 +33,7 @@ import {
   ThermometerIcon,
   MapPinIcon,
   Building2,
+  Newspaper,
   Sun,
   Cloud,
   CloudRain,
@@ -105,6 +106,15 @@ interface IdleDisplaySettings {
   screensaverTimeoutSec: number;
   movementSensitivityPercent: number;
   timeFormat: '12h' | '24h';
+  showNewsTicker: boolean;
+  newsSource: 'google_india' | 'google_india_hi' | 'hindu' | 'indian_express' | 'ndtv';
+  newsRefreshMinutes: number;
+}
+
+interface NewsHeadline {
+  title: string;
+  link?: string;
+  publishedAt?: string;
 }
 
 // ===== API CONFIGURATION =====
@@ -497,7 +507,14 @@ const IdleHomeOverlay: React.FC<{
   deviceSettings: { organization?: string; location?: string; country?: string };
   nowMs: number;
   timeFormat: '12h' | '24h';
-}> = ({ cityData, deviceSettings, nowMs, timeFormat }) => {
+  showNewsTicker: boolean;
+  newsSourceLabel: string;
+  newsHeadlinesEn: NewsHeadline[];
+  newsHeadlinesHi: NewsHeadline[];
+  newsLanguage: 'en' | 'hi';
+  newsOpacity: number;
+  newsCountdown: number;
+}> = ({ cityData, deviceSettings, nowMs, timeFormat, showNewsTicker, newsSourceLabel, newsHeadlinesEn, newsHeadlinesHi, newsLanguage, newsOpacity, newsCountdown }) => {
   const now = new Date(nowMs);
   const timeLabel = now.toLocaleTimeString([], {
     hour: '2-digit',
@@ -549,6 +566,33 @@ const IdleHomeOverlay: React.FC<{
     if (lower.includes('sun') || lower.includes('clear')) return <Sun size={28} />;
     return <Cloud size={28} />;
   })();
+  const forecast24Label = cityData?.forecast24h?.temp || '-';
+  const forecast24Desc = cityData?.forecast24h?.description || '-';
+  const forecast48Label = cityData?.forecast48h?.temp || '-';
+  const forecast48Desc = cityData?.forecast48h?.description || '-';
+  const latLabel = typeof cityData?.lat === 'number' ? cityData.lat.toFixed(2) : '-';
+  const lonLabel = typeof cityData?.lon === 'number' ? cityData.lon.toFixed(2) : '-';
+  const hasHindi = newsHeadlinesHi.length > 0;
+  const showingHindi = newsLanguage === 'hi' && hasHindi;
+  const activeNews = showingHindi ? newsHeadlinesHi : newsHeadlinesEn;
+  const newsLangLabel = showingHindi ? 'Hindi' : 'English';
+  const commonCardSx = {
+    p: 1.25,
+    color: '#fff',
+    borderRadius: 3,
+    border: '1px solid rgba(255,255,255,0.16)',
+    background: 'linear-gradient(140deg, rgba(40,40,46,0.80), rgba(22,22,26,0.70))',
+    boxShadow: '0 8px 30px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.08)',
+    backdropFilter: 'blur(14px) saturate(130%)',
+    WebkitBackdropFilter: 'blur(14px) saturate(130%)',
+    height: '100%',
+    minHeight: 0,
+    maxHeight: 'none',
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: 'space-between',
+    overflow: 'hidden',
+  } as const;
 
   return (
     <Box
@@ -556,6 +600,7 @@ const IdleHomeOverlay: React.FC<{
         position: 'fixed',
         inset: 0,
         bgcolor: '#000',
+        backgroundImage: 'radial-gradient(circle at 20% 10%, rgba(70,70,90,0.20), transparent 40%), radial-gradient(circle at 80% 90%, rgba(50,70,90,0.20), transparent 35%)',
         color: '#fff',
         zIndex: 1400,
         display: 'flex',
@@ -564,13 +609,13 @@ const IdleHomeOverlay: React.FC<{
         px: 4,
       }}
     >
-      <Box sx={{ width: '100%', maxWidth: 980 }}>
+      <Box sx={{ width: '100%', maxWidth: 1160 }}>
         <Box sx={{ width: '100%', display: 'flex', justifyContent: 'center', mb: 1 }}>
           <Typography
             variant="h1"
             sx={{
               fontWeight: 700,
-              letterSpacing: 1,
+              letterSpacing: 0.8,
               fontSize: { xs: '4rem', md: '8rem' },
               lineHeight: 1.05,
               textAlign: 'center',
@@ -590,43 +635,204 @@ const IdleHomeOverlay: React.FC<{
         </Typography>
         <Typography
           variant="h5"
-          sx={{ textAlign: 'center', color: 'rgba(255,255,255,0.75)', mb: 5, fontSize: { xs: '1.25rem', md: '2rem' } }}
+          sx={{ textAlign: 'center', color: 'rgba(255,255,255,0.75)', mb: 4, fontSize: { xs: '1.25rem', md: '2rem' } }}
         >
           {dateLabel}
         </Typography>
 
         <Box
           sx={{
+            width: '100%',
+            maxWidth: 1120,
+            mx: 'auto',
             display: 'grid',
-            gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' },
-            gap: 2,
+            gridTemplateColumns: { xs: '1fr', lg: '1fr 1fr' },
+            gap: 1.2,
+            alignItems: 'stretch',
           }}
         >
-          <Paper sx={{ p: 2.5, bgcolor: 'rgba(255,255,255,0.08)', color: '#fff', borderRadius: 2 }}>
-            <Typography variant="overline" sx={{ color: 'rgba(255,255,255,0.7)' }}>Weather</Typography>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              {weatherIcon}
-              <Typography variant="h4" sx={{ fontWeight: 600 }}>{tempLabel}</Typography>
-            </Box>
-            <Typography variant="body1" sx={{ color: 'rgba(255,255,255,0.8)' }}>{weatherLabel}</Typography>
-          </Paper>
-          <Paper sx={{ p: 2.5, bgcolor: 'rgba(255,255,255,0.08)', color: '#fff', borderRadius: 2 }}>
-            <Typography variant="overline" sx={{ color: 'rgba(255,255,255,0.7)' }}>City / State</Typography>
-            <Typography variant="h5" sx={{ fontWeight: 600 }}>{cityLabel}</Typography>
-            {locationDetail && (
-              <Typography variant="body1" sx={{ color: 'rgba(255,255,255,0.8)' }}>
-                {locationDetail}
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' },
+              gridTemplateRows: { xs: 'auto', md: 'repeat(2, minmax(0, 1fr))' },
+              gap: 1.1,
+              height: { xs: 'auto', lg: 290 },
+            }}
+          >
+            <Paper sx={commonCardSx}>
+              <Typography variant="overline" sx={{ color: 'rgba(255,255,255,0.7)', lineHeight: 1.1 }}>Weather</Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.25 }}>
+                {weatherIcon}
+                <Typography variant="h5" sx={{ fontWeight: 600, whiteSpace: 'nowrap' }}>{tempLabel}</Typography>
+              </Box>
+              <Typography
+                variant="body2"
+                sx={{
+                  color: 'rgba(255,255,255,0.8)',
+                  mb: 0.6,
+                  display: '-webkit-box',
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: 'vertical',
+                  overflow: 'hidden',
+                  minHeight: '2.2em',
+                }}
+              >
+                {weatherLabel}
               </Typography>
-            )}
-          </Paper>
-          <Paper sx={{ p: 2.5, bgcolor: 'rgba(255,255,255,0.08)', color: '#fff', borderRadius: 2 }}>
-            <Typography variant="overline" sx={{ color: 'rgba(255,255,255,0.7)' }}>Device Location</Typography>
-            <Typography variant="h5" sx={{ fontWeight: 600 }}>{deviceLocationLabel}</Typography>
-          </Paper>
-          <Paper sx={{ p: 2.5, bgcolor: 'rgba(255,255,255,0.08)', color: '#fff', borderRadius: 2 }}>
-            <Typography variant="overline" sx={{ color: 'rgba(255,255,255,0.7)' }}>Organization</Typography>
-            <Typography variant="h5" sx={{ fontWeight: 600 }}>{deviceOrgLabel}</Typography>
-          </Paper>
+              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                <Chip size="small" label={`+24h ${forecast24Label}  ${forecast24Desc}`} sx={{ bgcolor: 'rgba(255,255,255,0.16)', color: '#fff' }} />
+                <Chip size="small" label={`+48h ${forecast48Label}  ${forecast48Desc}`} sx={{ bgcolor: 'rgba(255,255,255,0.16)', color: '#fff' }} />
+              </Box>
+            </Paper>
+            <Paper sx={commonCardSx}>
+              <Typography variant="overline" sx={{ color: 'rgba(255,255,255,0.7)', lineHeight: 1.1 }}>City / State</Typography>
+              <Typography
+                variant="h6"
+                sx={{
+                  fontWeight: 600,
+                  display: '-webkit-box',
+                  WebkitLineClamp: 1,
+                  WebkitBoxOrient: 'vertical',
+                  overflow: 'hidden',
+                }}
+              >
+                {cityLabel}
+              </Typography>
+              <Typography
+                variant="body2"
+                sx={{
+                  color: 'rgba(255,255,255,0.8)',
+                  display: '-webkit-box',
+                  WebkitLineClamp: 1,
+                  WebkitBoxOrient: 'vertical',
+                  overflow: 'hidden',
+                }}
+              >
+                {locationDetail || 'State / Country not set'}
+              </Typography>
+              <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.65)', whiteSpace: 'nowrap' }}>Lat {latLabel}, Lon {lonLabel}</Typography>
+            </Paper>
+            <Paper sx={commonCardSx}>
+              <Typography variant="overline" sx={{ color: 'rgba(255,255,255,0.7)', lineHeight: 1.1 }}>Device Location</Typography>
+              <Typography
+                variant="h6"
+                sx={{
+                  fontWeight: 600,
+                  display: '-webkit-box',
+                  WebkitLineClamp: 1,
+                  WebkitBoxOrient: 'vertical',
+                  overflow: 'hidden',
+                }}
+              >
+                {deviceLocationLabel}
+              </Typography>
+              <Typography
+                variant="body2"
+                sx={{
+                  color: 'rgba(255,255,255,0.7)',
+                  display: '-webkit-box',
+                  WebkitLineClamp: 1,
+                  WebkitBoxOrient: 'vertical',
+                  overflow: 'hidden',
+                }}
+              >
+                {countryLabel || 'Country not set'}
+              </Typography>
+            </Paper>
+            <Paper sx={commonCardSx}>
+              <Typography variant="overline" sx={{ color: 'rgba(255,255,255,0.7)', lineHeight: 1.1 }}>Organization</Typography>
+              <Typography
+                variant="h6"
+                sx={{
+                  fontWeight: 600,
+                  display: '-webkit-box',
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: 'vertical',
+                  overflow: 'hidden',
+                  minHeight: '2.4em',
+                  lineHeight: 1.2,
+                }}
+              >
+                {deviceOrgLabel}
+              </Typography>
+              <Typography
+                variant="body2"
+                sx={{
+                  color: 'rgba(255,255,255,0.7)',
+                  display: '-webkit-box',
+                  WebkitLineClamp: 1,
+                  WebkitBoxOrient: 'vertical',
+                  overflow: 'hidden',
+                }}
+              >
+                FaceIt Attendance Terminal
+              </Typography>
+            </Paper>
+          </Box>
+
+          {showNewsTicker && activeNews.length > 0 && (
+            <Paper
+              sx={{
+                p: 2.2,
+                bgcolor: 'rgba(30,30,34,0.70)',
+                color: '#fff',
+                borderRadius: 3,
+                border: '1px solid rgba(255,255,255,0.15)',
+                backdropFilter: 'blur(12px) saturate(130%)',
+                WebkitBackdropFilter: 'blur(12px) saturate(130%)',
+                overflow: 'hidden',
+                minHeight: { xs: 250, lg: 290 },
+                maxHeight: { xs: 380, lg: 290 },
+                height: { xs: 'auto', lg: 290 },
+                display: 'flex',
+                flexDirection: 'column',
+              }}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, mb: 1 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Newspaper size={18} />
+                  <Typography variant="subtitle2" sx={{ color: 'rgba(255,255,255,0.85)', fontWeight: 700, letterSpacing: 0.4 }}>
+                    {newsSourceLabel || 'India Headlines'} · {newsLangLabel}
+                  </Typography>
+                </Box>
+                <Chip
+                  label={`${newsCountdown}s`}
+                  size="small"
+                  sx={{ bgcolor: 'rgba(255,255,255,0.16)', color: '#fff', fontWeight: 700, minWidth: 54 }}
+                />
+              </Box>
+              <Box
+                sx={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 1.05,
+                  justifyContent: 'space-between',
+                  flex: 1,
+                  opacity: newsOpacity,
+                  transition: 'opacity 600ms ease-in-out, transform 600ms ease-in-out',
+                  transform: newsOpacity < 1 ? 'translateY(4px)' : 'translateY(0)',
+                  overflow: 'hidden',
+                }}
+              >
+                {activeNews.slice(0, 5).map((item, idx) => (
+                  <Typography
+                    key={`${newsLanguage}-${item.title}-${idx}`}
+                    variant="body2"
+                    sx={{
+                      color: 'rgba(255,255,255,0.92)',
+                      lineHeight: 1.38,
+                      fontWeight: 500,
+                      whiteSpace: 'normal',
+                      wordBreak: 'break-word',
+                    }}
+                  >
+                    • {item.title}
+                  </Typography>
+                ))}
+              </Box>
+            </Paper>
+          )}
         </Box>
       </Box>
     </Box>
@@ -662,7 +868,17 @@ const CameraFeed: React.FC = () => {
     screensaverTimeoutSec: 15,
     movementSensitivityPercent: 50,
     timeFormat: '24h',
+    showNewsTicker: true,
+    newsSource: 'google_india',
+    newsRefreshMinutes: 15,
   });
+  const [newsHeadlinesEn, setNewsHeadlinesEn] = useState<NewsHeadline[]>([]);
+  const [newsHeadlinesHi, setNewsHeadlinesHi] = useState<NewsHeadline[]>([]);
+  const [newsSourceLabel, setNewsSourceLabel] = useState<string>('India Headlines');
+  const [newsLanguage, setNewsLanguage] = useState<'en' | 'hi'>('en');
+  const [newsOpacity, setNewsOpacity] = useState<number>(1);
+  const [newsCountdown, setNewsCountdown] = useState<number>(15);
+  const [detectionMode, setDetectionMode] = useState<'auto' | 'off'>('auto');
   const [lastSignificantActivityAt, setLastSignificantActivityAt] = useState<number>(Date.now());
   const [lastMotionActivityAt, setLastMotionActivityAt] = useState<number>(0);
   const [nowMs, setNowMs] = useState<number>(Date.now());
@@ -757,6 +973,11 @@ const CameraFeed: React.FC = () => {
           screensaverTimeoutSec: Number(data?.screensaverTimeoutSec ?? prev.screensaverTimeoutSec),
           movementSensitivityPercent: Number(data?.movementSensitivityPercent ?? prev.movementSensitivityPercent),
           timeFormat: data?.timeFormat === '12h' ? '12h' : '24h',
+          showNewsTicker: Boolean(data?.showNewsTicker ?? prev.showNewsTicker),
+          newsSource: ['google_india', 'google_india_hi', 'hindu', 'indian_express', 'ndtv'].includes(String(data?.newsSource))
+            ? data.newsSource
+            : prev.newsSource,
+          newsRefreshMinutes: Math.min(60, Math.max(5, Number(data?.newsRefreshMinutes ?? prev.newsRefreshMinutes))),
         }));
       } catch (error) {
         console.error('Error fetching idle display settings:', error);
@@ -766,6 +987,87 @@ const CameraFeed: React.FC = () => {
     const interval = setInterval(fetchIdleDisplaySettings, 30000);
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (!showIdleHome || !idleDisplaySettings.showNewsTicker) return;
+
+    const fetchHeadlines = async () => {
+      try {
+        const qsEn = new URLSearchParams({
+          source: idleDisplaySettings.newsSource,
+          limit: '6',
+        });
+        const qsHi = new URLSearchParams({
+          source: 'google_india_hi',
+          limit: '6',
+        });
+        const [enRes, hiRes] = await Promise.all([
+          fetch(`${API_BASE}/news/headlines?${qsEn.toString()}`),
+          fetch(`${API_BASE}/news/headlines?${qsHi.toString()}`),
+        ]);
+
+        if (enRes.ok) {
+          const enData = await enRes.json();
+          if (Array.isArray(enData?.items)) {
+            setNewsHeadlinesEn(enData.items);
+            setNewsSourceLabel(String(enData?.sourceLabel || 'India Headlines'));
+          }
+        }
+        if (hiRes.ok) {
+          const hiData = await hiRes.json();
+          if (Array.isArray(hiData?.items)) {
+            setNewsHeadlinesHi(hiData.items);
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching headlines:', error);
+      }
+    };
+
+    fetchHeadlines();
+    const intervalMs = Math.max(5, Number(idleDisplaySettings.newsRefreshMinutes || 15)) * 60 * 1000;
+    const interval = setInterval(fetchHeadlines, intervalMs);
+    return () => clearInterval(interval);
+  }, [
+    showIdleHome,
+    idleDisplaySettings.showNewsTicker,
+    idleDisplaySettings.newsSource,
+    idleDisplaySettings.newsRefreshMinutes,
+  ]);
+
+  useEffect(() => {
+    if (!showIdleHome || !idleDisplaySettings.showNewsTicker) return;
+    let fadeTimer: ReturnType<typeof setTimeout> | null = null;
+    setNewsLanguage('en');
+    setNewsCountdown(15);
+    setNewsOpacity(1);
+
+    const interval = setInterval(() => {
+      setNewsCountdown((prev) => {
+        if (prev <= 1) {
+          setNewsOpacity(0);
+          if (fadeTimer) clearTimeout(fadeTimer);
+          fadeTimer = setTimeout(() => {
+            setNewsLanguage((lang) => (lang === 'en' ? 'hi' : 'en'));
+            setNewsOpacity(1);
+          }, 550);
+          return 15;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => {
+      clearInterval(interval);
+      if (fadeTimer) clearTimeout(fadeTimer);
+    };
+  }, [showIdleHome, idleDisplaySettings.showNewsTicker]);
+
+  useEffect(() => {
+    if (detectionMode !== 'off') return;
+    setCurrentFaces([]);
+    setLastFacesAt(null);
+  }, [detectionMode]);
 
   useEffect(() => {
     const ticker = setInterval(() => setNowMs(Date.now()), 1000);
@@ -1181,11 +1483,11 @@ const CameraFeed: React.FC = () => {
     };
 
     const isRecognitionWarm = (Date.now() - lastMotionActivityAt) < 10000;
-    const shouldIdle = cameraStatus !== 'active' || !isRecognitionWarm;
+    const shouldIdle = detectionMode === 'off' || cameraStatus !== 'active' || !isRecognitionWarm;
     if (recognitionIdleRef.current === shouldIdle) return;
     recognitionIdleRef.current = shouldIdle;
     syncRecognitionIdleMode(shouldIdle);
-  }, [cameraStatus, lastMotionActivityAt, nowMs]);
+  }, [cameraStatus, lastMotionActivityAt, nowMs, detectionMode]);
   useEffect(() => {
     setCurrentFaces([]);
     setLastFacesAt(null);
@@ -1592,6 +1894,13 @@ const CameraFeed: React.FC = () => {
           deviceSettings={deviceSettings}
           nowMs={nowMs}
           timeFormat={idleDisplaySettings.timeFormat}
+          showNewsTicker={idleDisplaySettings.showNewsTicker}
+          newsSourceLabel={newsSourceLabel}
+          newsHeadlinesEn={newsHeadlinesEn}
+          newsHeadlinesHi={newsHeadlinesHi}
+          newsLanguage={newsLanguage}
+          newsOpacity={newsOpacity}
+          newsCountdown={newsCountdown}
         />
       )}
 
@@ -1631,6 +1940,13 @@ const CameraFeed: React.FC = () => {
             onClick={() => setShowOverlays(prev => !prev)}
           >
             {showOverlays ? 'Hide Overlay' : 'Show Overlay'}
+          </Button>
+          <Button
+            variant={detectionMode === 'off' ? 'contained' : 'outlined'}
+            color={detectionMode === 'off' ? 'warning' : 'success'}
+            onClick={() => setDetectionMode((prev) => (prev === 'auto' ? 'off' : 'auto'))}
+          >
+            Detection: {detectionMode === 'off' ? 'Off' : 'Auto'}
           </Button>
         </Box>
 
