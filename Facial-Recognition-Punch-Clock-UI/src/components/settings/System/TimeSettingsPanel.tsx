@@ -7,6 +7,8 @@ type Props = {
     timeSource: string;
     ntpServers: string[];
     timeFormat: string;
+    screensaverTimeoutSec?: number;
+    movementSensitivityPercent?: number;
   };
   setSettings: (settings: Props['settings']) => void;
 };
@@ -66,6 +68,40 @@ const TimeSettingsPanel: React.FC<Props> = ({ settings, setSettings }) => {
               ntpServers: e.target.value.split(',').map((v) => v.trim()).filter(Boolean),
             })}
             placeholder="time.google.com, pool.ntp.org, time.cloudflare.com"
+          />
+        </Box>
+      </Tooltip>
+
+      <Tooltip title="Seconds since last significant activity before idle home screen appears. Default: 15s" placement="top" arrow enterDelay={400}>
+        <Box sx={{ cursor: 'help', mt: 2 }}>
+          <TextField
+            label="Screensaver Time (seconds)"
+            variant="outlined"
+            type="number"
+            fullWidth
+            inputProps={{ min: 3, max: 300, step: 1 }}
+            value={Number(settings.screensaverTimeoutSec ?? 15)}
+            onChange={(e) => setSettings({
+              ...settings,
+              screensaverTimeoutSec: Math.min(300, Math.max(3, Number(e.target.value) || 15)),
+            })}
+          />
+        </Box>
+      </Tooltip>
+
+      <Tooltip title="How much frame change counts as movement. 50% means at least half the sampled pixels must change to keep camera screen active." placement="top" arrow enterDelay={400}>
+        <Box sx={{ cursor: 'help', mt: 2 }}>
+          <TextField
+            label="Movement Sensitivity (%)"
+            variant="outlined"
+            type="number"
+            fullWidth
+            inputProps={{ min: 5, max: 95, step: 1 }}
+            value={Number(settings.movementSensitivityPercent ?? 50)}
+            onChange={(e) => setSettings({
+              ...settings,
+              movementSensitivityPercent: Math.min(95, Math.max(5, Number(e.target.value) || 50)),
+            })}
           />
         </Box>
       </Tooltip>

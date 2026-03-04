@@ -95,6 +95,12 @@ interface SystemStatus {
   errors: string[];
 }
 
+interface IdleDisplaySettings {
+  screensaverTimeoutSec: number;
+  movementSensitivityPercent: number;
+  timeFormat: '12h' | '24h';
+}
+
 // ===== API CONFIGURATION =====
 const API_BASE = import.meta.env.VITE_API_BASE || (window.location.protocol + '//' + window.location.hostname + ':5002/api');
 const RECONNECTION_DELAY = 3000; // 3 seconds
@@ -480,6 +486,101 @@ const StatusMonitor: React.FC<{
   );
 };
 
+const IdleHomeOverlay: React.FC<{
+  cityData: any;
+  deviceSettings: { organization?: string; location?: string };
+  nowMs: number;
+  timeFormat: '12h' | '24h';
+}> = ({ cityData, deviceSettings, nowMs, timeFormat }) => {
+  const now = new Date(nowMs);
+  const timeLabel = now.toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: timeFormat === '12h',
+  });
+  const dateLabel = now.toLocaleDateString([], {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+  const weatherLabel = cityData?.description || cityData?.discription || '-';
+  const tempLabel = cityData?.temp || (typeof cityData?.temperature === 'number' ? `${cityData.temperature}°C` : '-');
+  const cityLabel = cityData?.city || '-';
+  const stateLabel = cityData?.state || '-';
+  const countryLabel = cityData?.country || '-';
+  const deviceLocationLabel = deviceSettings?.location || '-';
+  const deviceOrgLabel = deviceSettings?.organization || '-';
+
+  return (
+    <Box
+      sx={{
+        position: 'fixed',
+        inset: 0,
+        bgcolor: '#000',
+        color: '#fff',
+        zIndex: 1400,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        px: 4,
+      }}
+    >
+      <Box sx={{ width: '100%', maxWidth: 980 }}>
+        <Typography
+          variant="h1"
+          sx={{
+            fontWeight: 700,
+            letterSpacing: 2,
+            fontSize: { xs: '3rem', md: '6rem' },
+            lineHeight: 1.05,
+            textAlign: 'center',
+            mb: 1,
+          }}
+        >
+          {timeLabel}
+        </Typography>
+        <Typography
+          variant="h5"
+          sx={{ textAlign: 'center', color: 'rgba(255,255,255,0.75)', mb: 5 }}
+        >
+          {dateLabel}
+        </Typography>
+
+        <Box
+          sx={{
+            display: 'grid',
+            gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' },
+            gap: 2,
+          }}
+        >
+          <Paper sx={{ p: 2.5, bgcolor: 'rgba(255,255,255,0.08)', color: '#fff', borderRadius: 2 }}>
+            <Typography variant="overline" sx={{ color: 'rgba(255,255,255,0.7)' }}>Weather</Typography>
+            <Typography variant="h4" sx={{ fontWeight: 600 }}>{tempLabel}</Typography>
+            <Typography variant="body1" sx={{ color: 'rgba(255,255,255,0.8)' }}>{weatherLabel}</Typography>
+          </Paper>
+          <Paper sx={{ p: 2.5, bgcolor: 'rgba(255,255,255,0.08)', color: '#fff', borderRadius: 2 }}>
+            <Typography variant="overline" sx={{ color: 'rgba(255,255,255,0.7)' }}>City / State</Typography>
+            <Typography variant="h5" sx={{ fontWeight: 600 }}>{cityLabel}</Typography>
+            <Typography variant="body1" sx={{ color: 'rgba(255,255,255,0.8)' }}>
+              {stateLabel}, {countryLabel}
+            </Typography>
+          </Paper>
+          <Paper sx={{ p: 2.5, bgcolor: 'rgba(255,255,255,0.08)', color: '#fff', borderRadius: 2 }}>
+            <Typography variant="overline" sx={{ color: 'rgba(255,255,255,0.7)' }}>Device Location</Typography>
+            <Typography variant="h5" sx={{ fontWeight: 600 }}>{deviceLocationLabel}</Typography>
+          </Paper>
+          <Paper sx={{ p: 2.5, bgcolor: 'rgba(255,255,255,0.08)', color: '#fff', borderRadius: 2 }}>
+            <Typography variant="overline" sx={{ color: 'rgba(255,255,255,0.7)' }}>Organization</Typography>
+            <Typography variant="h5" sx={{ fontWeight: 600 }}>{deviceOrgLabel}</Typography>
+          </Paper>
+        </Box>
+      </Box>
+    </Box>
+  );
+};
+
 // ===== MAIN COMPONENT =====
 const CameraFeed: React.FC = () => {
   const { cityData } = useAppContext();
@@ -505,6 +606,14 @@ const CameraFeed: React.FC = () => {
   const [deviceSettings, setDeviceSettings] = useState<{ organization?: string; location?: string }>({});
   const [systemStats, setSystemStats] = useState<any>(null);
   const [showOverlays, setShowOverlays] = useState(true);
+  const [idleDisplaySettings, setIdleDisplaySettings] = useState<IdleDisplaySettings>({
+    screensaverTimeoutSec: 15,
+    movementSensitivityPercent: 50,
+    timeFormat: '24h',
+  });
+  const [lastSignificantActivityAt, setLastSignificantActivityAt] = useState<number>(Date.now());
+  const [nowMs, setNowMs] = useState<number>(Date.now());
+  const [showIdleHome, setShowIdleHome] = useState(false);
   // Modal windows disabled; use overlay-only UI
   const [editingLog, setEditingLog] = useState<AttendanceLog | null>(null);
   const [trainingNotice, setTrainingNotice] = useState<{ open: boolean; message: string; severity: 'success' | 'error' | 'info' }>({
@@ -521,6 +630,8 @@ const CameraFeed: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   const logLookupRef = useRef<string | null>(null);
+  const motionCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const prevMotionFrameRef = useRef<Uint8ClampedArray | null>(null);
 
   // Custom hooks
   const { cameraStatus, systemStatus, startCamera, stopCamera, restartCamera } = useCameraControls();
@@ -555,6 +666,31 @@ const CameraFeed: React.FC = () => {
       }
     };
     fetchDeviceSettings();
+  }, []);
+
+  useEffect(() => {
+    const fetchIdleDisplaySettings = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/system/time-settings`);
+        if (!response.ok) return;
+        const data = await response.json();
+        setIdleDisplaySettings((prev) => ({
+          screensaverTimeoutSec: Number(data?.screensaverTimeoutSec ?? prev.screensaverTimeoutSec),
+          movementSensitivityPercent: Number(data?.movementSensitivityPercent ?? prev.movementSensitivityPercent),
+          timeFormat: data?.timeFormat === '12h' ? '12h' : '24h',
+        }));
+      } catch (error) {
+        console.error('Error fetching idle display settings:', error);
+      }
+    };
+    fetchIdleDisplaySettings();
+    const interval = setInterval(fetchIdleDisplaySettings, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const ticker = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(ticker);
   }, []);
 
   useEffect(() => {
@@ -856,9 +992,90 @@ const CameraFeed: React.FC = () => {
     }, 500);
     return () => clearInterval(interval);
   }, [showOverlays, cameraStatus, lastEventAt]);
+
+  useEffect(() => {
+    if (currentFaces.length > 0) {
+      setLastSignificantActivityAt(Date.now());
+    }
+  }, [currentFaces.length]);
+
+  useEffect(() => {
+    if (cameraStatus !== 'active') {
+      prevMotionFrameRef.current = null;
+      setShowIdleHome(false);
+      return;
+    }
+
+    const interval = setInterval(() => {
+      const img = imgRef.current;
+      if (!img || !img.complete) return;
+      const width = img.naturalWidth || img.clientWidth;
+      const height = img.naturalHeight || img.clientHeight;
+      if (!width || !height) return;
+
+      try {
+        const sampleW = 96;
+        const sampleH = 54;
+        if (!motionCanvasRef.current) {
+          motionCanvasRef.current = document.createElement('canvas');
+        }
+        const c = motionCanvasRef.current;
+        c.width = sampleW;
+        c.height = sampleH;
+        const ctx = c.getContext('2d', { willReadFrequently: true });
+        if (!ctx) return;
+        ctx.drawImage(img, 0, 0, sampleW, sampleH);
+        const data = ctx.getImageData(0, 0, sampleW, sampleH).data;
+        const prev = prevMotionFrameRef.current;
+        if (!prev || prev.length !== data.length) {
+          prevMotionFrameRef.current = data.slice();
+          return;
+        }
+
+        let changed = 0;
+        let total = 0;
+        for (let i = 0; i < data.length; i += 4) {
+          const currGray = (data[i] + data[i + 1] + data[i + 2]) / 3;
+          const prevGray = (prev[i] + prev[i + 1] + prev[i + 2]) / 3;
+          if (Math.abs(currGray - prevGray) >= 32) changed++;
+          total++;
+        }
+        prevMotionFrameRef.current = data.slice();
+        const changePercent = total > 0 ? (changed / total) * 100 : 0;
+        if (changePercent >= idleDisplaySettings.movementSensitivityPercent) {
+          setLastSignificantActivityAt(Date.now());
+        }
+      } catch (error) {
+        console.error('Motion sampling error:', error);
+      }
+    }, 700);
+
+    return () => clearInterval(interval);
+  }, [cameraStatus, idleDisplaySettings.movementSensitivityPercent]);
+
+  useEffect(() => {
+    if (cameraStatus !== 'active') {
+      setShowIdleHome(false);
+      return;
+    }
+    if (currentFaces.length > 0) {
+      setShowIdleHome(false);
+      return;
+    }
+    const idleMs = Math.max(3, Number(idleDisplaySettings.screensaverTimeoutSec || 15)) * 1000;
+    const isIdle = Date.now() - lastSignificantActivityAt >= idleMs;
+    setShowIdleHome(isIdle);
+  }, [
+    cameraStatus,
+    currentFaces.length,
+    lastSignificantActivityAt,
+    nowMs,
+    idleDisplaySettings.screensaverTimeoutSec,
+  ]);
   useEffect(() => {
     setCurrentFaces([]);
     setLastFacesAt(null);
+    setLastSignificantActivityAt(Date.now());
   }, [cameraStatus, connectionStatus]);
 
   // Handle video events
@@ -1243,6 +1460,15 @@ const CameraFeed: React.FC = () => {
           {trainingNotice.message}
         </Alert>
       </Snackbar>
+
+      {showIdleHome && (
+        <IdleHomeOverlay
+          cityData={cityData}
+          deviceSettings={deviceSettings}
+          nowMs={nowMs}
+          timeFormat={idleDisplaySettings.timeFormat}
+        />
+      )}
 
       {/* Control Panel */}
       <Box display="flex" justifyContent="space-between" alignItems="center" gap={2}>

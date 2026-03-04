@@ -72,6 +72,8 @@ const SystemSettings = () => {
     timeSource: 'auto',
     ntpServers: ['time.google.com', 'pool.ntp.org', 'time.cloudflare.com', 'time.windows.com'],
     timeFormat: '24h',
+    screensaverTimeoutSec: 15,
+    movementSensitivityPercent: 50,
   });
   const [attendanceSettings, setAttendanceSettings] = useState({
     duplicatePunchIntervalSec: 30,

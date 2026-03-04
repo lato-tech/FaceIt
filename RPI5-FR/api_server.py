@@ -253,6 +253,8 @@ time_settings = {
         'time.windows.com',
     ],
     'timeFormat': '24h',  # '12h' | '24h'
+    'screensaverTimeoutSec': 15,
+    'movementSensitivityPercent': 50,
 }
 
 # Attendance settings (runtime)
