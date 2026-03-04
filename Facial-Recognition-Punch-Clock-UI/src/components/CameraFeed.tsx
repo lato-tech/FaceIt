@@ -565,23 +565,23 @@ const IdleHomeOverlay: React.FC<{
       }}
     >
       <Box sx={{ width: '100%', maxWidth: 980 }}>
-        <Typography
-          variant="h1"
-          sx={{
-            fontWeight: 700,
-            letterSpacing: 2,
-            fontSize: { xs: '4rem', md: '8rem' },
-            lineHeight: 1.05,
-            textAlign: 'center',
-            mb: 1,
-            fontVariantNumeric: 'tabular-nums',
-            fontFeatureSettings: '"tnum" 1',
-            display: 'inline-block',
-            minWidth: '8.5ch',
-          }}
-        >
-          {timeLabel}
-        </Typography>
+        <Box sx={{ width: '100%', display: 'flex', justifyContent: 'center', mb: 1 }}>
+          <Typography
+            variant="h1"
+            sx={{
+              fontWeight: 700,
+              letterSpacing: 1,
+              fontSize: { xs: '4rem', md: '8rem' },
+              lineHeight: 1.05,
+              textAlign: 'center',
+              fontVariantNumeric: 'tabular-nums',
+              fontFeatureSettings: '"tnum" 1',
+              fontFamily: '"Roboto Mono", "SFMono-Regular", Consolas, monospace',
+            }}
+          >
+            {timeLabel}
+          </Typography>
+        </Box>
         <Typography
           variant="h4"
           sx={{ textAlign: 'center', color: 'rgba(255,255,255,0.85)', mb: 0.5, fontWeight: 600 }}
@@ -664,6 +664,7 @@ const CameraFeed: React.FC = () => {
     timeFormat: '24h',
   });
   const [lastSignificantActivityAt, setLastSignificantActivityAt] = useState<number>(Date.now());
+  const [lastMotionActivityAt, setLastMotionActivityAt] = useState<number>(0);
   const [nowMs, setNowMs] = useState<number>(Date.now());
   const [showIdleHome, setShowIdleHome] = useState(false);
   // Modal windows disabled; use overlay-only UI
@@ -686,6 +687,7 @@ const CameraFeed: React.FC = () => {
   const prevMotionFrameRef = useRef<Uint8ClampedArray | null>(null);
   const lastPointerActivityAtRef = useRef<number>(0);
   const recognitionIdleRef = useRef<boolean | null>(null);
+  const manualStopRef = useRef<boolean>(false);
 
   // Custom hooks
   const { cameraStatus, systemStatus, startCamera, stopCamera, restartCamera } = useCameraControls();
@@ -696,6 +698,7 @@ const CameraFeed: React.FC = () => {
   useEffect(() => {
     const autoStart = async () => {
       try {
+        if (manualStopRef.current) return;
         const isHealthy = await fetch(`${API_BASE}/health`).then(r => r.ok).catch(() => false);
         if (isHealthy) {
           startCamera();
@@ -706,6 +709,28 @@ const CameraFeed: React.FC = () => {
     };
     autoStart();
   }, []); // Run only on mount
+
+  // Watchdog: if backend is running but camera stream is down, bring it back automatically.
+  useEffect(() => {
+    const watchdog = setInterval(async () => {
+      try {
+        if (manualStopRef.current) return;
+        if (cameraStatus === 'starting' || cameraStatus === 'stopping') return;
+
+        const isHealthy = await fetch(`${API_BASE}/health`).then((r) => r.ok).catch(() => false);
+        if (!isHealthy) return;
+
+        const recStatus = await fetch(`${API_BASE}/recognition/status`).then((r) => r.ok ? r.json() : null).catch(() => null);
+        const backendCameraActive = Boolean(recStatus?.camera_active);
+        if (!backendCameraActive) {
+          startCamera();
+        }
+      } catch (error) {
+        console.error('Camera watchdog failed:', error);
+      }
+    }, 7000);
+    return () => clearInterval(watchdog);
+  }, [cameraStatus, startCamera]);
 
   useEffect(() => {
     const fetchDeviceSettings = async () => {
@@ -1108,7 +1133,9 @@ const CameraFeed: React.FC = () => {
         prevMotionFrameRef.current = data.slice();
         const changePercent = total > 0 ? (changed / total) * 100 : 0;
         if (changePercent >= idleDisplaySettings.movementSensitivityPercent) {
-          setLastSignificantActivityAt(Date.now());
+          const activityTs = Date.now();
+          setLastSignificantActivityAt(activityTs);
+          setLastMotionActivityAt(activityTs);
         }
       } catch (error) {
         console.error('Motion sampling error:', error);
@@ -1134,6 +1161,13 @@ const CameraFeed: React.FC = () => {
   ]);
 
   useEffect(() => {
+    if (cameraStatus !== 'active') return;
+    if (currentFaces.length > 0) {
+      setLastMotionActivityAt(Date.now());
+    }
+  }, [cameraStatus, currentFaces.length]);
+
+  useEffect(() => {
     const syncRecognitionIdleMode = async (idle: boolean) => {
       try {
         await fetch(`${API_BASE}/recognition/idle-mode`, {
@@ -1146,15 +1180,17 @@ const CameraFeed: React.FC = () => {
       }
     };
 
-    const shouldIdle = cameraStatus === 'active' && showIdleHome;
+    const isRecognitionWarm = (Date.now() - lastMotionActivityAt) < 10000;
+    const shouldIdle = cameraStatus !== 'active' || !isRecognitionWarm;
     if (recognitionIdleRef.current === shouldIdle) return;
     recognitionIdleRef.current = shouldIdle;
     syncRecognitionIdleMode(shouldIdle);
-  }, [cameraStatus, showIdleHome]);
+  }, [cameraStatus, lastMotionActivityAt, nowMs]);
   useEffect(() => {
     setCurrentFaces([]);
     setLastFacesAt(null);
     setLastSignificantActivityAt(Date.now());
+    setLastMotionActivityAt(0);
   }, [cameraStatus, connectionStatus]);
 
   // Handle video events
@@ -1225,6 +1261,16 @@ const CameraFeed: React.FC = () => {
       setIsTraining(false);
     }
   };
+
+  const handleStartCameraClick = useCallback(() => {
+    manualStopRef.current = false;
+    startCamera();
+  }, [startCamera]);
+
+  const handleStopCameraClick = useCallback(() => {
+    manualStopRef.current = true;
+    stopCamera();
+  }, [stopCamera]);
 
   return (
     <Box sx={{
@@ -1555,7 +1601,7 @@ const CameraFeed: React.FC = () => {
           <Button
             variant="outlined"
             startIcon={<SquareIcon size={16} />}
-            onClick={stopCamera}
+            onClick={handleStopCameraClick}
             disabled={cameraStatus !== 'active'}
           >
             Stop Camera
@@ -1565,7 +1611,7 @@ const CameraFeed: React.FC = () => {
             variant="contained"
             color="primary"
             startIcon={<PlayIcon size={16} />}
-            onClick={startCamera}
+            onClick={handleStartCameraClick}
             disabled={cameraStatus === 'active' || cameraStatus === 'starting'}
           >
             Start Camera

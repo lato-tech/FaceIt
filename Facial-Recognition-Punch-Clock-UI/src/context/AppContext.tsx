@@ -6,11 +6,11 @@ const API_BASE = import.meta.env.VITE_API_BASE || (window.location.protocol + '/
 
 const CPU_ALERT_THRESHOLD = 85;
 
-// Default Pathankot, Punjab, India coordinates
+// Default coordinates until user saves their own location.
 const DEFAULT_CITY = {
   city: 'Pathankot',
-  country: 'India',
-  state: 'Punjab',
+  country: '',
+  state: '',
   lat: 32.2669,
   lon: 75.6444,
   timezoneOffset: 330, // IST offset in minutes

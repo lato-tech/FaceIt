@@ -238,10 +238,12 @@ erpnext_settings = {
 }
 
 # Device settings (runtime)
-device_settings = {
+DEVICE_SETTINGS_DEFAULTS = {
     'organization': '',
-    'location': ''
+    'location': '',
+    'country': ''
 }
+device_settings = dict(DEVICE_SETTINGS_DEFAULTS)
 
 # Time settings (runtime)
 TIME_SETTINGS_DEFAULTS = {
@@ -343,7 +345,14 @@ def _load_device_settings():
         if os.path.exists(settings_file):
             with open(settings_file, 'r') as f:
                 data = json.load(f)
-                device_settings.update(data)
+                sanitized = _sanitize_device_settings(data)
+                device_settings.clear()
+                device_settings.update({**DEVICE_SETTINGS_DEFAULTS, **sanitized})
+                _write_json_file(settings_file, device_settings)
+        else:
+            device_settings.clear()
+            device_settings.update(DEVICE_SETTINGS_DEFAULTS)
+            _write_json_file(settings_file, device_settings)
     except Exception as e:
         print(f"⚠️  Could not load device settings: {e}")
 
@@ -424,6 +433,18 @@ def _sanitize_attendance_settings(data):
             clean['duplicatePunchIntervalSec'] = max(1, min(3600, int(data.get('duplicatePunchIntervalSec'))))
         except Exception:
             pass
+    return clean
+
+def _sanitize_device_settings(data):
+    if not isinstance(data, dict):
+        return {}
+    clean = {}
+    if 'organization' in data:
+        clean['organization'] = str(data.get('organization') or '').strip()
+    if 'location' in data:
+        clean['location'] = str(data.get('location') or '').strip()
+    if 'country' in data:
+        clean['country'] = str(data.get('country') or '').strip()
     return clean
 
 def _get_system_time_ms():
@@ -549,9 +570,17 @@ def _apply_ai_settings():
     """Apply AI settings to runtime components."""
     global face_detector
     try:
-        confidence = ai_settings.get('aiPerformance', {}).get('confidenceThreshold', 0.85)
+        perf = ai_settings.get('aiPerformance', {}) or {}
+        confidence = perf.get('confidenceThreshold', 0.85)
+        model_optimization = str(perf.get('modelOptimization', 'balanced'))
         if face_detector is not None:
             face_detector.min_confidence_threshold = float(confidence)
+            if model_optimization == 'speed':
+                face_detector.target_width = 800
+            elif model_optimization == 'accuracy':
+                face_detector.target_width = 1120
+            else:
+                face_detector.target_width = 960
     except Exception as e:
         print(f"⚠️  Could not apply AI settings: {e}")
 
@@ -888,12 +917,20 @@ def recognition_worker():
                     cpu_high = False
                 last_cpu_check = now_ts
 
-            if cpu_high and (now_ts - last_recognition_time) < max(recognition_interval, 1.0):
+            idle_gap = now_ts - last_face_detection_time if last_face_detection_time else 9999
+            if idle_gap > 10:
+                effective_interval = max(recognition_interval, 0.9)
+            elif idle_gap > 4:
+                effective_interval = max(recognition_interval, 0.65)
+            else:
+                effective_interval = recognition_interval
+
+            if cpu_high and (now_ts - last_recognition_time) < max(effective_interval, 1.0):
                 time.sleep(0.2)
                 continue
             
             # Smart frame skipping: only process if enough time has passed
-            if now_ts - last_recognition_time < recognition_interval:
+            if now_ts - last_recognition_time < effective_interval:
                 time.sleep(0.06)  # Short sleep to prevent CPU spinning
                 continue
             
@@ -3291,11 +3328,15 @@ def get_device_settings():
     """Get device settings"""
     try:
         settings_file = 'device_settings.json'
+        merged = dict(DEVICE_SETTINGS_DEFAULTS)
         if os.path.exists(settings_file):
             with open(settings_file, 'r') as f:
                 data = json.load(f)
-                device_settings.update(data)
-        return jsonify(device_settings)
+                merged.update(_sanitize_device_settings(data))
+        _write_json_file(settings_file, merged)
+        device_settings.clear()
+        device_settings.update(merged)
+        return jsonify(merged)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -3309,10 +3350,13 @@ def update_device_settings():
         if not data:
             return jsonify({'error': 'No data provided'}), 400
 
-        with open(settings_file, 'w') as f:
-            json.dump(data, f, indent=2)
+        clean = _sanitize_device_settings(data)
+        merged = dict(DEVICE_SETTINGS_DEFAULTS)
+        merged.update(clean)
+        _write_json_file(settings_file, merged)
 
-        device_settings.update(data)
+        device_settings.clear()
+        device_settings.update(merged)
 
         return jsonify({
             'success': True,
@@ -3535,6 +3579,19 @@ if __name__ == '__main__':
     print("- GET  /api/recognition/status - Get recognition status")
     print("- GET  /api/recognition/stream - Stream recognition results (SSE)")
     print("- GET  /api/recognition/latest - Get latest recognition results")
+
+    # Auto-start camera stream/pipeline at server boot for kiosk mode.
+    if Config.AUTO_START_RECOGNITION:
+        try:
+            if ensure_camera_ready(force=True):
+                camera_active = True
+                recognition_idle_mode = False
+                start_recognition_pipeline(force=True)
+                print("✅ Auto-started camera and recognition pipeline on server startup")
+            else:
+                print(f"⚠️  Auto-start skipped: {last_camera_init_error or 'camera init failed'}")
+        except Exception as e:
+            print(f"⚠️  Auto-start error: {e}")
     
     try:
         app.run(

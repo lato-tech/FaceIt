@@ -26,6 +26,7 @@ class FaceDetector:
         self.recognition_tolerance = recognition_tolerance
         # Use distance-based threshold (face_recognition default is 0.6)
         self.min_confidence_threshold = 0.4  # 1 - 0.6
+        self.target_width = 960
         self.last_recognized = {'name': None, 'ts': 0.0}
 
     def update_known_faces(self, known_face_encodings, known_face_names):
@@ -91,7 +92,7 @@ class FaceDetector:
             h, w = frame.shape[:2]
             # Keep more facial detail for recognition when subjects are farther away.
             # 640 can make faces too small on wide scenes; 960 is a better trade-off.
-            target_width = 960
+            target_width = int(self.target_width or 960)
             scale = 1.0
             resized = frame
             if w > target_width:

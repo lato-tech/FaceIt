@@ -4,11 +4,11 @@ import FaceRecognitionSystem from './components/FaceRecognitionSystem';
 import Settings from './pages/Settings';
 import Sidebar from './components/layout/Sidebar';
 import { ThemeProvider } from './utils/theme';
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import Box from '@mui/material/Box';
 import { Alert, Grid, Snackbar } from '@mui/material';
 import { AppProvider, useAppContext } from './context/AppContext';
-const API_BASE = import.meta.env.VITE_API_BASE || (window.location.protocol + '//' + window.location.hostname + ':5002/api');
+const API_BASE = (import.meta as any).env?.VITE_API_BASE || (window.location.protocol + '//' + window.location.hostname + ':5002/api');
 
 const CpuWarningBanner = () => {
   const { cpuHigh, cpuAlertId, systemStats } = useAppContext();
@@ -49,10 +49,11 @@ const RecognitionRouteController = () => {
 
     const syncIdleMode = async () => {
       try {
+        if (onHomePage) return;
         await fetch(`${API_BASE}/recognition/idle-mode`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ idle: !onHomePage }),
+          body: JSON.stringify({ idle: true }),
         });
       } catch (error) {
         console.error('Failed to update recognition idle mode by route:', error);
