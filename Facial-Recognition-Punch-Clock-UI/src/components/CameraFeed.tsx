@@ -646,7 +646,7 @@ const IdleHomeOverlay: React.FC<{
             maxWidth: 1120,
             mx: 'auto',
             display: 'grid',
-            gridTemplateColumns: { xs: '1fr', lg: '1fr 1fr' },
+            gridTemplateColumns: { xs: '1fr', lg: 'calc(50% - 150px) calc(50% + 150px)' },
             gap: 1.2,
             alignItems: 'stretch',
           }}
@@ -657,7 +657,7 @@ const IdleHomeOverlay: React.FC<{
               gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' },
               gridTemplateRows: { xs: 'auto', md: 'repeat(2, minmax(0, 1fr))' },
               gap: 1.1,
-              height: { xs: 'auto', lg: 290 },
+              height: { xs: 'auto', lg: 310 },
             }}
           >
             <Paper sx={commonCardSx}>
@@ -671,11 +671,9 @@ const IdleHomeOverlay: React.FC<{
                 sx={{
                   color: 'rgba(255,255,255,0.8)',
                   mb: 0.6,
-                  display: '-webkit-box',
-                  WebkitLineClamp: 2,
-                  WebkitBoxOrient: 'vertical',
-                  overflow: 'hidden',
-                  minHeight: '2.2em',
+                  whiteSpace: 'normal',
+                  wordBreak: 'break-word',
+                  lineHeight: 1.22,
                 }}
               >
                 {weatherLabel}
@@ -743,14 +741,12 @@ const IdleHomeOverlay: React.FC<{
             <Paper sx={commonCardSx}>
               <Typography variant="overline" sx={{ color: 'rgba(255,255,255,0.7)', lineHeight: 1.1 }}>Organization</Typography>
               <Typography
-                variant="h6"
+                variant="body1"
                 sx={{
                   fontWeight: 600,
-                  display: '-webkit-box',
-                  WebkitLineClamp: 2,
-                  WebkitBoxOrient: 'vertical',
-                  overflow: 'hidden',
-                  minHeight: '2.4em',
+                  fontSize: '1rem',
+                  whiteSpace: 'normal',
+                  wordBreak: 'break-word',
                   lineHeight: 1.2,
                 }}
               >
@@ -760,10 +756,10 @@ const IdleHomeOverlay: React.FC<{
                 variant="body2"
                 sx={{
                   color: 'rgba(255,255,255,0.7)',
-                  display: '-webkit-box',
-                  WebkitLineClamp: 1,
-                  WebkitBoxOrient: 'vertical',
-                  overflow: 'hidden',
+                  fontSize: '0.8rem',
+                  lineHeight: 1.2,
+                  whiteSpace: 'normal',
+                  wordBreak: 'break-word',
                 }}
               >
                 FaceIt Attendance Terminal
@@ -782,9 +778,9 @@ const IdleHomeOverlay: React.FC<{
                 backdropFilter: 'blur(12px) saturate(130%)',
                 WebkitBackdropFilter: 'blur(12px) saturate(130%)',
                 overflow: 'hidden',
-                minHeight: { xs: 250, lg: 290 },
-                maxHeight: { xs: 380, lg: 290 },
-                height: { xs: 'auto', lg: 290 },
+                minHeight: { xs: 250, lg: 310 },
+                maxHeight: { xs: 400, lg: 310 },
+                height: { xs: 'auto', lg: 310 },
                 display: 'flex',
                 flexDirection: 'column',
               }}
@@ -818,10 +814,10 @@ const IdleHomeOverlay: React.FC<{
                 {activeNews.slice(0, 5).map((item, idx) => (
                   <Typography
                     key={`${newsLanguage}-${item.title}-${idx}`}
-                    variant="body2"
+                    variant="body1"
                     sx={{
                       color: 'rgba(255,255,255,0.92)',
-                      lineHeight: 1.38,
+                      lineHeight: 1.4,
                       fontWeight: 500,
                       whiteSpace: 'normal',
                       wordBreak: 'break-word',
@@ -907,7 +903,9 @@ const CameraFeed: React.FC = () => {
 
   // Custom hooks
   const { cameraStatus, systemStatus, startCamera, stopCamera, restartCamera } = useCameraControls();
-  const { events, connectionStatus } = useRecognitionStream(cameraStatus === 'active');
+  const isDetectionAuto = detectionMode === 'auto';
+  const effectiveRecognitionActive = isDetectionAuto && systemStatus.recognitionActive;
+  const { events, connectionStatus } = useRecognitionStream(cameraStatus === 'active' && isDetectionAuto);
 
   // Auto-start camera when component mounts (only if health check passes)
   // startCamera() also syncs status when backend reports "Camera is already active" (e.g. after page refresh)
@@ -1067,6 +1065,8 @@ const CameraFeed: React.FC = () => {
     if (detectionMode !== 'off') return;
     setCurrentFaces([]);
     setLastFacesAt(null);
+    setLastRecognizedPerson(null);
+    setDuplicateInfo(null);
   }, [detectionMode]);
 
   useEffect(() => {
@@ -1355,23 +1355,23 @@ const CameraFeed: React.FC = () => {
 
   // Continuous drawing for video stream
   useEffect(() => {
-    if (cameraStatus === 'active' && showOverlays) {
+    if (cameraStatus === 'active' && isDetectionAuto && showOverlays) {
       const interval = setInterval(drawFaceOverlay, 60);
       return () => clearInterval(interval);
     }
-  }, [cameraStatus, currentFaces, drawFaceOverlay, showOverlays]);
+  }, [cameraStatus, currentFaces, drawFaceOverlay, showOverlays, isDetectionAuto]);
 
   useEffect(() => {
-    if (!showOverlays) {
+    if (!showOverlays || !isDetectionAuto) {
       const canvas = canvasRef.current;
       const ctx = canvas?.getContext('2d');
       if (canvas && ctx) {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
       }
     }
-  }, [showOverlays]);
+  }, [showOverlays, isDetectionAuto]);
   useEffect(() => {
-    if (!showOverlays || cameraStatus !== 'active') return;
+    if (!showOverlays || !isDetectionAuto || cameraStatus !== 'active') return;
     const interval = setInterval(() => {
       if (!lastFacesAt) return;
       if (Date.now() - lastFacesAt > 2000) {
@@ -1379,9 +1379,9 @@ const CameraFeed: React.FC = () => {
       }
     }, 500);
     return () => clearInterval(interval);
-  }, [showOverlays, cameraStatus, lastFacesAt]);
+  }, [showOverlays, isDetectionAuto, cameraStatus, lastFacesAt]);
   useEffect(() => {
-    if (!showOverlays || cameraStatus !== 'active') return;
+    if (!showOverlays || !isDetectionAuto || cameraStatus !== 'active') return;
     const interval = setInterval(() => {
       if (!lastEventAt) return;
       if (Date.now() - lastEventAt > 1500) {
@@ -1389,7 +1389,7 @@ const CameraFeed: React.FC = () => {
       }
     }, 500);
     return () => clearInterval(interval);
-  }, [showOverlays, cameraStatus, lastEventAt]);
+  }, [showOverlays, isDetectionAuto, cameraStatus, lastEventAt]);
 
   useEffect(() => {
     if (cameraStatus !== 'active') {
@@ -1622,7 +1622,7 @@ const CameraFeed: React.FC = () => {
         />
 
         {/* Face Detection Overlay Canvas */}
-        {cameraStatus === 'active' && showOverlays && (
+        {cameraStatus === 'active' && isDetectionAuto && showOverlays && (
           <canvas
             ref={canvasRef}
             style={{
@@ -1637,7 +1637,7 @@ const CameraFeed: React.FC = () => {
         )}
 
         {/* Recognition Status Overlay */}
-        {cameraStatus === 'active' && systemStatus.recognitionActive && showOverlays && (
+        {cameraStatus === 'active' && effectiveRecognitionActive && showOverlays && (
           <Box
             sx={{
               position: 'absolute',
@@ -1769,7 +1769,7 @@ const CameraFeed: React.FC = () => {
         )}
 
         {/* Face Count Indicator */}
-        {currentFaces.length > 0 && showOverlays && (
+        {isDetectionAuto && currentFaces.length > 0 && showOverlays && (
           <Box
             sx={{
               position: 'absolute',
